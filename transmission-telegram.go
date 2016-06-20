@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"gopkg.in/telegram-bot-api.v4"
 
@@ -53,6 +55,11 @@ func init() {
 		flag.Usage()
 		os.Exit(1)
 	}
+
+	// make sure that the handler doesn't contain @
+	if strings.Contains(Master, "@") {
+		Master = strings.Replace(Master, "@", "", -1)
+	}
 }
 
 // init transmission
@@ -91,6 +98,7 @@ func init() {
 		fmt.Fprintf(os.Stderr, "Telegram Error: %s\n", err)
 		os.Exit(1)
 	}
+	fmt.Fprintf(os.Stdout, "Authorized on %s", Bot.Self.UserName)
 
 	// get a channel and sign it to 'Updates'
 	u := tgbotapi.NewUpdate(0)
@@ -106,7 +114,7 @@ func init() {
 func main() {
 	for update := range Updates {
 		// ignore anyone other than 'master'
-		if update.Message.From.UserName != Master {
+		if strings.ToLower(update.Message.From.UserName) != strings.ToLower(Master) {
 			continue
 		}
 		// ignore edited messages
@@ -121,6 +129,8 @@ func main() {
 		switch command {
 		case "list", "/list":
 			// list torrents
+			go list(&update)
+
 		case "downs", "/downs":
 			// list downloading
 		case "active", "/active":
@@ -161,5 +171,56 @@ func main() {
 			// no such command, try help
 
 		}
+	}
+}
+
+// list will form and send a list of all the torrents
+func list(ud *tgbotapi.Update) {
+	torrents, err := Client.GetTorrents()
+	if err != nil {
+		send("list: "+err.Error(), ud.Message.Chat.ID)
+		return
+	}
+
+	buf := new(bytes.Buffer)
+	for i := range torrents {
+		buf.WriteString(fmt.Sprintf("<%d> %s\n", torrents[i].ID, torrents[i].Name))
+	}
+
+	if buf.Len() == 0 {
+		send("No torrents exist!", ud.Message.Chat.ID)
+		return
+	}
+
+	send(buf.String(), ud.Message.Chat.ID)
+}
+
+// send takes a chat id and a message to send.
+func send(text string, chatID int64) {
+	// set typing action
+	action := tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping)
+	Bot.Send(action)
+
+	// check the rune count, telegram is limited to 4096 chars per message;
+	// so if our message is > 4096, split it in chunks the send them.
+	msgRuneCount := utf8.RuneCountInString(text)
+LenCheck:
+	if msgRuneCount > 4096 {
+		msg := tgbotapi.NewMessage(chatID, text[:4095])
+
+		// send current chunk
+		if _, err := Bot.Send(msg); err != nil {
+			fmt.Fprintf(os.Stderr, "send error: %s\n", err)
+		}
+		// move to the next chunk
+		text = text[4095:]
+		msgRuneCount = utf8.RuneCountInString(text)
+		goto LenCheck
+	}
+
+	// if msgRuneCount < 4096, send it normally
+	msg := tgbotapi.NewMessage(chatID, text)
+	if _, err := Bot.Send(msg); err != nil {
+		fmt.Fprint(os.Stderr, "send error: %s\n", err)
 	}
 }
