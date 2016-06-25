@@ -8,11 +8,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"gopkg.in/telegram-bot-api.v4"
 
-	"github.com/pivotal-golang/bytefmt"
+	"github.com/dustin/go-humanize"
 	"github.com/pyed/transmission"
 )
 
@@ -163,6 +164,8 @@ func main() {
 
 		case "info", "/info":
 			// gets info on specific torrent
+			go info(&update, tokens[1:])
+
 		case "stop", "/stop":
 			// stop one torrent or more
 			go stop(&update, tokens[1:])
@@ -181,12 +184,20 @@ func main() {
 
 		case "stats", "/stats":
 			// print transmission stats
+			go stats(&update)
+
 		case "speed", "/speed":
 			// print current download and upload speeds
+			go speed(&update)
+
 		case "del", "/del":
 			// deletes a torrent but keep its data
+			go del(&update, tokens[1:])
+
 		case "deldata", "/deldata":
 			// deletes a torrents and its data
+			go deldata(&update, tokens[1:])
+
 		case "help", "/help":
 			// prints a help message
 		case "version", "/version":
@@ -255,7 +266,7 @@ func active(ud *tgbotapi.Update) {
 	for i := range torrents {
 		if torrents[i].RateUpload > 0 {
 			buf.WriteString(fmt.Sprintf("<%d> %s\n\t⬆ %s\n",
-				torrents[i].ID, torrents[i].Name, bytefmt.ByteSize(uint64(torrents[i].RateUpload))))
+				torrents[i].ID, torrents[i].Name, humanize.Bytes(torrents[i].RateUpload)))
 		}
 	}
 	if buf.Len() == 0 {
@@ -404,6 +415,39 @@ func latest(ud *tgbotapi.Update, tokens []string) {
 	send(buf.String(), ud.Message.Chat.ID)
 }
 
+// info takes an id of a torrent and returns some info about it
+func info(ud *tgbotapi.Update, tokens []string) {
+	if len(tokens) == 0 {
+		send("info: needs a torrent ID number", ud.Message.Chat.ID)
+		return
+	}
+
+	// try to read the id
+	num, err := strconv.Atoi(tokens[0])
+	if err != nil {
+		send(fmt.Sprintf("info: %s is not a number", tokens[0]), ud.Message.Chat.ID)
+		return
+	}
+
+	// get the torrent
+	torrent, err := Client.GetTorrent(num)
+	if err != nil {
+		send(fmt.Sprintf("info: Can't find a torrent with an ID of %d", num), ud.Message.Chat.ID)
+		return
+	}
+
+	// format the info
+	info := fmt.Sprintf("<%d> %s\n%s\t%s of %s (%.2f%%)\t⬇ %s  ⬆ %s R:%.3f\nUP: %s  DL: %s  Added: %s  ETA: %d\nTracker: %s",
+		torrent.ID, torrent.Name, torrent.TorrentStatus(), humanize.Bytes(torrent.DownloadedEver), humanize.Bytes(torrent.SizeWhenDone),
+		torrent.PercentDone*100, humanize.Bytes(torrent.RateDownload), humanize.Bytes(torrent.RateUpload), torrent.UploadRatio,
+		humanize.Bytes(torrent.UploadedEver), humanize.Bytes(torrent.DownloadedEver), time.Unix(torrent.AddedDate, 0).Format(time.Stamp),
+		torrent.Eta, torrent.Trackers[0].Announce)
+	// trackers should be fixed
+
+	// send it
+	send(info, ud.Message.Chat.ID)
+}
+
 // stop takes one or more torrent's ids and stop them
 func stop(ud *tgbotapi.Update, tokens []string) {
 	// make sure that we got at least one argument
@@ -494,6 +538,105 @@ func startall(ud *tgbotapi.Update) {
 	}
 	// this will get sent no matter what.
 	send("startall: success", ud.Message.Chat.ID)
+}
+
+// stats echo back transmission stats
+func stats(ud *tgbotapi.Update) {
+	stats, err := Client.GetStats()
+	if err != nil {
+		send("stats: "+err.Error(), ud.Message.Chat.ID)
+		return
+	}
+
+	msg := fmt.Sprintf(
+		`
+		Total torrents: %d
+		Active: %d
+		Paused: %d
+
+		- Current Stats -
+		Downloaded: %s
+		Uploaded: %s
+		Running time: %d seconds
+
+		- Total Stats -
+		Sessions: %d
+		Downloaded: %s
+		Uploaded: %s
+		Total Running time: %d seconds
+		`,
+
+		stats.TorrentCount,
+		stats.ActiveTorrentCount,
+		stats.PausedTorrentCount,
+		humanize.Bytes(stats.CurrentStats.DownloadedBytes),
+		humanize.Bytes(stats.CurrentStats.UploadedBytes),
+		stats.CurrentStats.SecondsActive,
+		stats.CumulativeStats.SessionCount,
+		humanize.Bytes(stats.CumulativeStats.DownloadedBytes),
+		humanize.Bytes(stats.CumulativeStats.UploadedBytes),
+		stats.CumulativeStats.SecondsActive,
+	)
+
+	send(msg, ud.Message.Chat.ID)
+}
+
+// speed will echo back the current download and upload speeds
+func speed(ud *tgbotapi.Update) {
+	stats, err := Client.GetStats()
+	if err != nil {
+		send("speed: "+err.Error(), ud.Message.Chat.ID)
+		return
+	}
+
+	msg := fmt.Sprintf("⬇ %s  ⬆ %s", humanize.Bytes(stats.DownloadSpeed), humanize.Bytes(stats.UploadSpeed))
+	send(msg, ud.Message.Chat.ID)
+}
+
+// del takes an id or more, and delete the corresponding torrent/s
+func del(ud *tgbotapi.Update, tokens []string) {
+	// make sure that we got an argument
+	if len(tokens) == 0 {
+		send("del: needs an ID", ud.Message.Chat.ID)
+		return
+	}
+	// try to read the id into an int
+	num, err := strconv.Atoi(tokens[0])
+	if err != nil {
+		send(fmt.Sprintf("del: %s is not an ID", tokens[0]), ud.Message.Chat.ID)
+		return
+	}
+
+	name, err := Client.DeleteTorrent(num, false)
+	if err != nil {
+		send("del: "+err.Error(), ud.Message.Chat.ID)
+		return
+	}
+
+	send("Deleted: "+name, ud.Message.Chat.ID)
+}
+
+// deldata takes an id or more, and delete the corresponding torrent/s with their data
+func deldata(ud *tgbotapi.Update, tokens []string) {
+	// make sure that we got an argument
+	if len(tokens) == 0 {
+		send("deldata: needs an ID", ud.Message.Chat.ID)
+		return
+	}
+	// try to read the id into an int
+	num, err := strconv.Atoi(tokens[0])
+	if err != nil {
+		send(fmt.Sprintf("deldata: %s is not an ID", tokens[0]), ud.Message.Chat.ID)
+		return
+	}
+
+	name, err := Client.DeleteTorrent(num, true)
+	if err != nil {
+		send("deldata: "+err.Error(), ud.Message.Chat.ID)
+		return
+	}
+
+	send("Deleted with data: "+name, ud.Message.Chat.ID)
 }
 
 // send takes a chat id and a message to send.
