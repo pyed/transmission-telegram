@@ -172,17 +172,13 @@ func main() {
 			// stop one torrent or more
 			go stop(&update, tokens[1:])
 
-		case "stopall", "/stopall":
-			// stops all the torrents
-			go stopall(&update)
-
 		case "start", "/start":
 			// starts one torrent or more
 			go start(&update, tokens[1:])
 
-		case "startall", "/startall":
-			// starts all the torrents
-			go startall(&update)
+		case "check", "/check":
+			// verify a torrent or torrents
+			go check(&update, tokens[1:])
 
 		case "stats", "/stats":
 			// print transmission stats
@@ -496,11 +492,21 @@ func info(ud *tgbotapi.Update, tokens []string) {
 	send(info, ud.Message.Chat.ID)
 }
 
-// stop takes one or more torrent's ids and stop them
+// stop takes id[s] of torrent[s] or 'all' to stop them
 func stop(ud *tgbotapi.Update, tokens []string) {
 	// make sure that we got at least one argument
 	if len(tokens) == 0 {
 		send("stop: needs an argument", ud.Message.Chat.ID)
+		return
+	}
+
+	// if the first argument is 'all' then stop all torrents
+	if tokens[0] == "all" {
+		if err := Client.StopAll(); err != nil {
+			send("stop: error occurred while stopping some torrents", ud.Message.Chat.ID)
+			return
+		}
+		send("stopped all torrents", ud.Message.Chat.ID)
 		return
 	}
 
@@ -525,29 +531,23 @@ func stop(ud *tgbotapi.Update, tokens []string) {
 	}
 }
 
-// stopall will stop all the torrents
-func stopall(ud *tgbotapi.Update) {
-	torrents, err := Client.GetTorrents()
-	if err != nil {
-		send("stopall: "+err.Error(), ud.Message.Chat.ID)
-		return
-	}
-
-	for i := range torrents {
-		if status, err := Client.StopTorrent(torrents[i].ID); err != nil {
-			send(fmt.Sprintf("[%s] stopall: error stopping %s : %s", status, torrents[i].Name, err.Error()), ud.Message.Chat.ID)
-		}
-	}
-	// this will get sent no matter what.
-	send("stopall: success", ud.Message.Chat.ID)
-}
-
-// start takes an id of a torrent and starts it
+// start takes id[s] of torrent[s] or 'all' to start them
 func start(ud *tgbotapi.Update, tokens []string) {
 	// make sure that we got at least one argument
 	if len(tokens) == 0 {
 		send("start: needs an argument", ud.Message.Chat.ID)
 		return
+	}
+
+	// if the first argument is 'all' then start all torrents
+	if tokens[0] == "all" {
+		if err := Client.StartAll(); err != nil {
+			send("start: error occurred while starting some torrents", ud.Message.Chat.ID)
+			return
+		}
+		send("started all torrents", ud.Message.Chat.ID)
+		return
+
 	}
 
 	for _, id := range tokens {
@@ -571,21 +571,45 @@ func start(ud *tgbotapi.Update, tokens []string) {
 	}
 }
 
-// startall will start all the torrents
-func startall(ud *tgbotapi.Update) {
-	torrents, err := Client.GetTorrents()
-	if err != nil {
-		send("startall: "+err.Error(), ud.Message.Chat.ID)
+// check takes id[s] of torrent[s] or 'all' to verify them
+func check(ud *tgbotapi.Update, tokens []string) {
+	// make sure that we got at least one argument
+	if len(tokens) == 0 {
+		send("check: needs an argument", ud.Message.Chat.ID)
 		return
 	}
 
-	for i := range torrents {
-		if status, err := Client.StartTorrent(torrents[i].ID); err != nil {
-			send(fmt.Sprintf("[%s] startall: error starting %s : %s", status, torrents[i].Name, err.Error()), ud.Message.Chat.ID)
+	// if the first argument is 'all' then start all torrents
+	if tokens[0] == "all" {
+		if err := Client.VerifyAll(); err != nil {
+			send("check: error occurred while verifying some torrents", ud.Message.Chat.ID)
+			return
 		}
+		send("verifying all torrents", ud.Message.Chat.ID)
+		return
+
 	}
-	// this will get sent no matter what.
-	send("startall: success", ud.Message.Chat.ID)
+
+	for _, id := range tokens {
+		num, err := strconv.Atoi(id)
+		if err != nil {
+			send(fmt.Sprintf("check: %s is not a number", id), ud.Message.Chat.ID)
+			continue
+		}
+		status, err := Client.VerifyTorrent(num)
+		if err != nil {
+			send("stop: "+err.Error(), ud.Message.Chat.ID)
+			continue
+		}
+
+		torrent, err := Client.GetTorrent(num)
+		if err != nil {
+			send(fmt.Sprintf("[fail] check: No torrent with an ID of %d", num), ud.Message.Chat.ID)
+			return
+		}
+		send(fmt.Sprintf("[%s] check: %s", status, torrent.Name), ud.Message.Chat.ID)
+	}
+
 }
 
 // stats echo back transmission stats
