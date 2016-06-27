@@ -200,6 +200,8 @@ func main() {
 			// prints a help message
 		case "version", "/version":
 			// print transmission and transmission-telegram versions
+			go version(&update)
+
 		case "":
 			// might be a file received
 			go receiveTorrent(&update)
@@ -481,7 +483,7 @@ func info(ud *tgbotapi.Update, tokens []string) {
 	}
 
 	// format the info
-	info := fmt.Sprintf("<%d> %s\n%s\t%s of %s (%.2f%%)\t⬇ %s  ⬆ %s R:%.3f\nUP: %s  DL: %s  Added: %s  ETA: %d\nTracker: %s",
+	info := fmt.Sprintf("<%d> %s\n%s\t%s of %s (%.2f%%)\t↓ %s  ↑ %s R:%.3f\nUP: %s  DL: %s  Added: %s  ETA: %d\nTracker: %s",
 		torrent.ID, torrent.Name, torrent.TorrentStatus(), humanize.Bytes(torrent.DownloadedEver), humanize.Bytes(torrent.SizeWhenDone),
 		torrent.PercentDone*100, humanize.Bytes(torrent.RateDownload), humanize.Bytes(torrent.RateUpload), torrent.UploadRatio,
 		humanize.Bytes(torrent.UploadedEver), humanize.Bytes(torrent.DownloadedEver), time.Unix(torrent.AddedDate, 0).Format(time.Stamp),
@@ -714,6 +716,13 @@ func deldata(ud *tgbotapi.Update, tokens []string) {
 
 		send("Deleted with data: "+name, ud.Message.Chat.ID)
 	}
+}
+
+// help
+
+// version sends transmission version + transmission-telegram version
+func version(ud *tgbotapi.Update) {
+	send(fmt.Sprintf("Transmission %s\nTransmission-telegram %s", Client.Version(), VERSION), ud.Message.Chat.ID)
 }
 
 // send takes a chat id and a message to send.
