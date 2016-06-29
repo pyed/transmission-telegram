@@ -140,6 +140,18 @@ func main() {
 			// list downloading
 			go downs(&update)
 
+		case "seeding", "/seeding":
+			// list seeding
+			go seeding(&update)
+
+		case "paused", "/paused":
+			// list puased torrents
+			go paused(&update)
+
+		case "checking", "/checking":
+			// list verifying torrents
+			go checking(&update)
+
 		case "active", "/active":
 			// list active torrents
 			go active(&update)
@@ -188,6 +200,10 @@ func main() {
 			// print current download and upload speeds
 			go speed(&update)
 
+		case "count", "/count":
+			// sends current torrents count per status
+			go count(&update)
+
 		case "del", "/del":
 			// deletes a torrent but keep its data
 			go del(&update, tokens[1:])
@@ -208,6 +224,7 @@ func main() {
 
 		default:
 			// no such command, try help
+			go send("no such command, try /help", update.Message.Chat.ID)
 
 		}
 	}
@@ -234,7 +251,7 @@ func list(ud *tgbotapi.Update) {
 	send(buf.String(), ud.Message.Chat.ID)
 }
 
-// downs will send the names of torrents with status: Downloading
+// downs will send the names of torrents with status 'Downloading' or in queue to
 func downs(ud *tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
@@ -245,9 +262,11 @@ func downs(ud *tgbotapi.Update) {
 	buf := new(bytes.Buffer)
 	for i := range torrents {
 		// Downloading or in queue to download
-		if torrents[i].Status == 4 ||
-			torrents[i].Status == 3 {
-			buf.WriteString(fmt.Sprintf("<%d> %s\n", torrents[i].ID, torrents[i].Name))
+		if torrents[i].Status == transmission.StatusDownloading ||
+			torrents[i].Status == transmission.StatusDownloadPending {
+			buf.WriteString(fmt.Sprintf("<%d> %s\n%s (%.1f%%) ↓ %s  ↑ %s R:%s\n\n",
+				torrents[i].ID, torrents[i].Name, torrents[i].TorrentStatus(), torrents[i].PercentDone*100,
+				humanize.Bytes(torrents[i].RateDownload), humanize.Bytes(torrents[i].RateUpload), torrents[i].Ratio()))
 		}
 	}
 
@@ -255,6 +274,87 @@ func downs(ud *tgbotapi.Update) {
 		send("No downloads", ud.Message.Chat.ID)
 		return
 	}
+	send(buf.String(), ud.Message.Chat.ID)
+}
+
+// seeding will send the names of the torrents with the status 'Seeding' or in the queue to
+func seeding(ud *tgbotapi.Update) {
+	torrents, err := Client.GetTorrents()
+	if err != nil {
+		send("seeding: "+err.Error(), ud.Message.Chat.ID)
+		return
+	}
+
+	buf := new(bytes.Buffer)
+	for i := range torrents {
+		if torrents[i].Status == transmission.StatusSeeding ||
+			torrents[i].Status == transmission.StatusSeedPending {
+			buf.WriteString(fmt.Sprintf("<%d> %s\n%s DL: %s UL: %s R:%s\n\n",
+				torrents[i].ID, torrents[i].Name, torrents[i].TorrentStatus(),
+				humanize.Bytes(torrents[i].DownloadedEver), humanize.Bytes(torrents[i].UploadedEver),
+				torrents[i].Ratio()))
+		}
+	}
+
+	if buf.Len() == 0 {
+		send("No torrents seeding", ud.Message.Chat.ID)
+		return
+	}
+
+	send(buf.String(), ud.Message.Chat.ID)
+
+}
+
+// paused will send the names of the torrents with status 'Paused'
+func paused(ud *tgbotapi.Update) {
+	torrents, err := Client.GetTorrents()
+	if err != nil {
+		send("paused: "+err.Error(), ud.Message.Chat.ID)
+		return
+	}
+
+	buf := new(bytes.Buffer)
+	for i := range torrents {
+		if torrents[i].Status == transmission.StatusStopped {
+			buf.WriteString(fmt.Sprintf("<%d> %s\n%s (%.1f%%) DL: %s UL: %s R:%s\n\n",
+				torrents[i].ID, torrents[i].Name, torrents[i].TorrentStatus(),
+				torrents[i].PercentDone*100, humanize.Bytes(torrents[i].DownloadedEver),
+				humanize.Bytes(torrents[i].UploadedEver), torrents[i].Ratio()))
+		}
+	}
+
+	if buf.Len() == 0 {
+		send("No paused torrents", ud.Message.Chat.ID)
+		return
+	}
+
+	send(buf.String(), ud.Message.Chat.ID)
+}
+
+// checking will send the names of torrents with the status 'verifying' or in the queue to
+func checking(ud *tgbotapi.Update) {
+	torrents, err := Client.GetTorrents()
+	if err != nil {
+		send("checking: "+err.Error(), ud.Message.Chat.ID)
+		return
+	}
+
+	buf := new(bytes.Buffer)
+	for i := range torrents {
+		if torrents[i].Status == transmission.StatusChecking ||
+			torrents[i].Status == transmission.StatusCheckPending {
+			buf.WriteString(fmt.Sprintf("<%d> %s\n%s (%.1f%%)\n\n",
+				torrents[i].ID, torrents[i].Name, torrents[i].TorrentStatus(),
+				torrents[i].PercentDone*100))
+
+		}
+	}
+
+	if buf.Len() == 0 {
+		send("No torrents verifying", ud.Message.Chat.ID)
+		return
+	}
+
 	send(buf.String(), ud.Message.Chat.ID)
 }
 
@@ -269,8 +369,10 @@ func active(ud *tgbotapi.Update) {
 	buf := new(bytes.Buffer)
 	for i := range torrents {
 		if torrents[i].RateUpload > 0 {
-			buf.WriteString(fmt.Sprintf("<%d> %s\n\t⬆ %s\n",
-				torrents[i].ID, torrents[i].Name, humanize.Bytes(torrents[i].RateUpload)))
+			buf.WriteString(fmt.Sprintf("<%d> %s\n%s (%.1f%%) ↓ %s  ↑ %s R:%s\n\n",
+				torrents[i].ID, torrents[i].Name, torrents[i].TorrentStatus(),
+				torrents[i].PercentDone*100, humanize.Bytes(torrents[i].RateDownload),
+				humanize.Bytes(torrents[i].RateUpload), torrents[i].Ratio()))
 		}
 	}
 	if buf.Len() == 0 {
@@ -483,11 +585,11 @@ func info(ud *tgbotapi.Update, tokens []string) {
 	}
 
 	// format the info
-	info := fmt.Sprintf("<%d> %s\n%s\t%s of %s (%.2f%%)\t↓ %s  ↑ %s R:%.3f\nUP: %s  DL: %s  Added: %s  ETA: %d\nTracker: %s",
+	info := fmt.Sprintf("<%d> %s\n%s\t%s of %s (%.1f%%)\t↓ %s  ↑ %s R:%s\nUP: %s  DL: %s  Added: %s  ETA: %s\nTracker: %s",
 		torrent.ID, torrent.Name, torrent.TorrentStatus(), humanize.Bytes(torrent.DownloadedEver), humanize.Bytes(torrent.SizeWhenDone),
-		torrent.PercentDone*100, humanize.Bytes(torrent.RateDownload), humanize.Bytes(torrent.RateUpload), torrent.UploadRatio,
+		torrent.PercentDone*100, humanize.Bytes(torrent.RateDownload), humanize.Bytes(torrent.RateUpload), torrent.Ratio(),
 		humanize.Bytes(torrent.UploadedEver), humanize.Bytes(torrent.DownloadedEver), time.Unix(torrent.AddedDate, 0).Format(time.Stamp),
-		torrent.Eta, torrent.Trackers[0].Announce)
+		torrent.ETA(), torrent.Trackers[0].Announce)
 	// trackers should be fixed
 
 	// send it
@@ -665,6 +767,42 @@ func speed(ud *tgbotapi.Update) {
 
 	msg := fmt.Sprintf("⬇ %s  ⬆ %s", humanize.Bytes(stats.DownloadSpeed), humanize.Bytes(stats.UploadSpeed))
 	send(msg, ud.Message.Chat.ID)
+}
+
+// count returns current torrents count per status
+func count(ud *tgbotapi.Update) {
+	torrents, err := Client.GetTorrents()
+	if err != nil {
+		send("count: "+err.Error(), ud.Message.Chat.ID)
+		return
+	}
+
+	var downloading, seeding, stopped, checking, downloadingQ, seedingQ, checkingQ int
+
+	for i := range torrents {
+		switch torrents[i].Status {
+		case transmission.StatusDownloading:
+			downloading++
+		case transmission.StatusSeeding:
+			seeding++
+		case transmission.StatusStopped:
+			stopped++
+		case transmission.StatusChecking:
+			checking++
+		case transmission.StatusDownloadPending:
+			downloadingQ++
+		case transmission.StatusSeedPending:
+			seedingQ++
+		case transmission.StatusCheckPending:
+			checkingQ++
+		}
+	}
+
+	msg := fmt.Sprintf("Downloading: %d\nSeeding: %d\nPaused: %d\nVerifying: %d\n\n- Waiting to -\nDownload: %d\nSeed: %d\nVerify: %d\n\nTotal: %d",
+		downloading, seeding, stopped, checking, downloadingQ, seedingQ, checkingQ, len(torrents))
+
+	send(msg, ud.Message.Chat.ID)
+
 }
 
 // del takes an id or more, and delete the corresponding torrent/s
