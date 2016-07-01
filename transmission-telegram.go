@@ -28,7 +28,7 @@ var (
 	Password string
 
 	// transmission
-	Client transmission.TransmissionClient
+	Client *transmission.TransmissionClient
 
 	// telegram
 	Bot     *tgbotapi.BotAPI
@@ -46,7 +46,7 @@ func init() {
 
 	// set the usage message
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: transmission-bot -token=<TOKEN> -master=<@tuser> -url=[http://] -username=[user] -password=[pass]\n")
+		fmt.Fprint(os.Stderr, "Usage: transmission-bot -token=<TOKEN> -master=<@tuser> -url=[http://] -username=[user] -password=[pass]\n\n")
 		flag.PrintDefaults()
 	}
 
@@ -159,6 +159,10 @@ func main() {
 		case "errors", "/errors":
 			// list torrents with errors
 			go errors(&update)
+
+		case "sort", "/sort":
+			// sort torrents
+			go sort(&update, tokens[1:])
 
 		case "trackers", "/trackers":
 			// list trackers
@@ -404,6 +408,82 @@ func errors(ud *tgbotapi.Update) {
 	send(buf.String(), ud.Message.Chat.ID)
 }
 
+// sort changes torrents sorting
+func sort(ud *tgbotapi.Update, tokens []string) {
+	if len(tokens) == 0 {
+		send(`sort takes one of (id, name, age, size, progress, download, upload, ratio)
+			optionally start with (rev) for reversed order
+			e.g. "sort rev size" to get smallest torrents first.`, ud.Message.Chat.ID)
+		return
+	}
+
+	var reversed bool
+	if strings.ToLower(tokens[0]) == "rev" {
+		reversed = true
+		tokens = tokens[1:]
+	}
+
+	switch strings.ToLower(tokens[0]) {
+	case "id":
+		if reversed {
+			Client.SetSort(transmission.SortRevID)
+			break
+		}
+		Client.SetSort(transmission.SortID)
+	case "name":
+		if reversed {
+			Client.SetSort(transmission.SortRevName)
+			break
+		}
+		Client.SetSort(transmission.SortName)
+	case "age":
+		if reversed {
+			Client.SetSort(transmission.SortRevAge)
+			break
+		}
+		Client.SetSort(transmission.SortAge)
+	case "size":
+		if reversed {
+			Client.SetSort(transmission.SortRevSize)
+			break
+		}
+		Client.SetSort(transmission.SortSize)
+	case "progress":
+		if reversed {
+			Client.SetSort(transmission.SortRevProgress)
+			break
+		}
+		Client.SetSort(transmission.SortProgress)
+	case "download":
+		if reversed {
+			Client.SetSort(transmission.SortRevDownloaded)
+			break
+		}
+		Client.SetSort(transmission.SortDownloaded)
+	case "upload":
+		if reversed {
+			Client.SetSort(transmission.SortRevUploaded)
+			break
+		}
+		Client.SetSort(transmission.SortUploaded)
+	case "ratio":
+		if reversed {
+			Client.SetSort(transmission.SortRevRatio)
+			break
+		}
+		Client.SetSort(transmission.SortRatio)
+	default:
+		send("unkown sorting method", ud.Message.Chat.ID)
+		return
+	}
+
+	if reversed {
+		send("sort: reversed "+tokens[0], ud.Message.Chat.ID)
+		return
+	}
+	send("sort: "+tokens[0], ud.Message.Chat.ID)
+}
+
 var trackerRegex = regexp.MustCompile(`https?://([^:/]*)`)
 
 // trackers will send a list of trackers and how many torrents each one has
@@ -549,8 +629,8 @@ func latest(ud *tgbotapi.Update, tokens []string) {
 		n = torrentsLen
 	}
 
-	// sort by addedDate, and set reverse to true to get the latest first
-	torrents.SortByAddedDate(true)
+	// sort by age, and set reverse to true to get the latest first
+	torrents.SortAge(true)
 
 	buf := new(bytes.Buffer)
 	for i := range torrents[:n] {
@@ -879,7 +959,7 @@ LenCheck:
 
 		// send current chunk
 		if _, err := Bot.Send(msg); err != nil {
-			fmt.Fprintf(os.Stderr, "send error: %s\n", err)
+			fmt.Fprintf(os.Stderr, "send error: %s\n", err.Error())
 		}
 		// move to the next chunk
 		text = text[4095:]
@@ -891,6 +971,6 @@ LenCheck:
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.DisableWebPagePreview = true
 	if _, err := Bot.Send(msg); err != nil {
-		fmt.Fprint(os.Stderr, "send error: %s\n", err)
+		fmt.Fprintf(os.Stderr, "send error: %s\n", err.Error())
 	}
 }
