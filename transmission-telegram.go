@@ -133,8 +133,7 @@ func main() {
 		switch command {
 		case "list", "/list":
 			// list torrents
-			// TODO take argument as tracker and list those only
-			go list(&update)
+			go list(&update, tokens[1:])
 
 		case "head", "/head":
 			// list the first 5 or n torrents
@@ -243,7 +242,7 @@ func main() {
 }
 
 // list will form and send a list of all the torrents
-func list(ud *tgbotapi.Update) {
+func list(ud *tgbotapi.Update, tokens []string) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
 		send("list: "+err.Error(), ud.Message.Chat.ID)
@@ -251,12 +250,28 @@ func list(ud *tgbotapi.Update) {
 	}
 
 	buf := new(bytes.Buffer)
-	for i := range torrents {
-		buf.WriteString(fmt.Sprintf("<%d> %s\n", torrents[i].ID, torrents[i].Name))
+	// if it gets a query, it will list torrents that has trackers that match the query
+	if len(tokens) != 0 {
+		// (?i) for case insensitivity
+		regx, err := regexp.Compile("(?i)" + tokens[0])
+		if err != nil {
+			send("list: "+err.Error(), ud.Message.Chat.ID)
+			return
+		}
+
+		for i := range torrents {
+			if regx.MatchString(torrents[i].GetTrackers()) {
+				buf.WriteString(fmt.Sprintf("<%d> %s\n", torrents[i].ID, torrents[i].Name))
+			}
+		}
+	} else { // if we did not get a query, list all torrents
+		for i := range torrents {
+			buf.WriteString(fmt.Sprintf("<%d> %s\n", torrents[i].ID, torrents[i].Name))
+		}
 	}
 
 	if buf.Len() == 0 {
-		send("No torrents exist!", ud.Message.Chat.ID)
+		send("list: No torrents", ud.Message.Chat.ID)
 		return
 	}
 
@@ -569,7 +584,7 @@ func sort(ud *tgbotapi.Update, tokens []string) {
 	send("sort: "+tokens[0], ud.Message.Chat.ID)
 }
 
-var trackerRegex = regexp.MustCompile(`https?://([^:/]*)`)
+var trackerRegex = regexp.MustCompile(`[https?|udp]://([^:/]*)`)
 
 // trackers will send a list of trackers and how many torrents each one has
 func trackers(ud *tgbotapi.Update) {
@@ -749,12 +764,11 @@ func info(ud *tgbotapi.Update, tokens []string) {
 	}
 
 	// format the info
-	info := fmt.Sprintf("<%d> %s\n%s\t%s of %s (%.1f%%)\t↓ %s  ↑ %s R:%s\nUP: %s  DL: %s  Added: %s  ETA: %s\nTracker: %s",
+	info := fmt.Sprintf("<%d> %s\n%s\t%s of %s (%.1f%%)\t↓ %s  ↑ %s R:%s\nUP: %s  DL: %s  Added: %s  ETA: %s\nTrackers: %s",
 		torrent.ID, torrent.Name, torrent.TorrentStatus(), humanize.Bytes(torrent.DownloadedEver), humanize.Bytes(torrent.SizeWhenDone),
 		torrent.PercentDone*100, humanize.Bytes(torrent.RateDownload), humanize.Bytes(torrent.RateUpload), torrent.Ratio(),
 		humanize.Bytes(torrent.UploadedEver), humanize.Bytes(torrent.DownloadedEver), time.Unix(torrent.AddedDate, 0).Format(time.Stamp),
-		torrent.ETA(), torrent.Trackers[0].Announce)
-	// trackers should be fixed
+		torrent.ETA(), torrent.GetTrackers())
 
 	// send it
 	send(info, ud.Message.Chat.ID)
@@ -929,7 +943,7 @@ func speed(ud *tgbotapi.Update) {
 		return
 	}
 
-	msg := fmt.Sprintf("⬇ %s  ⬆ %s", humanize.Bytes(stats.DownloadSpeed), humanize.Bytes(stats.UploadSpeed))
+	msg := fmt.Sprintf("↓ %s  ↑ %s", humanize.Bytes(stats.DownloadSpeed), humanize.Bytes(stats.UploadSpeed))
 	send(msg, ud.Message.Chat.ID)
 }
 
