@@ -136,6 +136,14 @@ func main() {
 			// TODO take argument as tracker and list those only
 			go list(&update)
 
+		case "head", "/head":
+			// list the first 5 or n torrents
+			go head(&update, tokens[1:])
+
+		case "tail", "/tail":
+			// list the last 5 or n torrents
+			go tail(&update, tokens[1:])
+
 		case "downs", "/downs":
 			// list downloading
 			go downs(&update)
@@ -252,6 +260,83 @@ func list(ud *tgbotapi.Update) {
 		return
 	}
 
+	send(buf.String(), ud.Message.Chat.ID)
+}
+
+// head will list the first 5 or n torrents
+func head(ud *tgbotapi.Update, tokens []string) {
+	var (
+		n   = 5 // default to 5
+		err error
+	)
+
+	if len(tokens) > 0 {
+		n, err = strconv.Atoi(tokens[0])
+		if err != nil {
+			send("head: argument must be a number", ud.Message.Chat.ID)
+			return
+		}
+	}
+
+	torrents, err := Client.GetTorrents()
+	if err != nil {
+		send("head: "+err.Error(), ud.Message.Chat.ID)
+		return
+	}
+
+	// make sure that we stay in the boundaries
+	if n <= 0 || n > len(torrents) {
+		n = len(torrents)
+	}
+
+	buf := new(bytes.Buffer)
+	for i := range torrents[:n] {
+		buf.WriteString(fmt.Sprintf("<%d> %s\n", torrents[i].ID, torrents[i].Name))
+	}
+
+	if buf.Len() == 0 {
+		send("head: No torrents", ud.Message.Chat.ID)
+		return
+	}
+	send(buf.String(), ud.Message.Chat.ID)
+
+}
+
+// tail lists the last 5 or n torrents
+func tail(ud *tgbotapi.Update, tokens []string) {
+	var (
+		n   = 5 // default to 5
+		err error
+	)
+
+	if len(tokens) > 0 {
+		n, err = strconv.Atoi(tokens[0])
+		if err != nil {
+			send("tail: argument must be a number", ud.Message.Chat.ID)
+			return
+		}
+	}
+
+	torrents, err := Client.GetTorrents()
+	if err != nil {
+		send("tail: "+err.Error(), ud.Message.Chat.ID)
+		return
+	}
+
+	// make sure that we stay in the boundaries
+	if n <= 0 || n > len(torrents) {
+		n = len(torrents)
+	}
+
+	buf := new(bytes.Buffer)
+	for _, torrent := range torrents[len(torrents)-n:] {
+		buf.WriteString(fmt.Sprintf("<%d> %s\n", torrent.ID, torrent.Name))
+	}
+
+	if buf.Len() == 0 {
+		send("tail: No torrents", ud.Message.Chat.ID)
+		return
+	}
 	send(buf.String(), ud.Message.Chat.ID)
 }
 
@@ -624,9 +709,8 @@ func latest(ud *tgbotapi.Update, tokens []string) {
 	}
 
 	// make sure that we stay in the boundaries
-	torrentsLen := len(torrents)
-	if n <= 0 || n > torrentsLen {
-		n = torrentsLen
+	if n <= 0 || n > len(torrents) {
+		n = len(torrents)
 	}
 
 	// sort by age, and set reverse to true to get the latest first
@@ -637,7 +721,7 @@ func latest(ud *tgbotapi.Update, tokens []string) {
 		buf.WriteString(fmt.Sprintf("<%d> %s\n", torrents[i].ID, torrents[i].Name))
 	}
 	if buf.Len() == 0 {
-		send("No torrents", ud.Message.Chat.ID)
+		send("latest: No torrents", ud.Message.Chat.ID)
 		return
 	}
 	send(buf.String(), ud.Message.Chat.ID)
