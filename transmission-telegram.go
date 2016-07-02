@@ -511,9 +511,9 @@ func errors(ud *tgbotapi.Update) {
 // sort changes torrents sorting
 func sort(ud *tgbotapi.Update, tokens []string) {
 	if len(tokens) == 0 {
-		send(`sort takes one of (id, name, age, size, progress, download, upload, ratio)
+		send(`sort takes one of (id, name, age, size, progress, downspeed, upspeed, download, upload, ratio)
 			optionally start with (rev) for reversed order
-			e.g. "sort rev size" to get smallest torrents first.`, ud.Message.Chat.ID)
+			e.g. "sort rev size" to get biggest torrents first.`, ud.Message.Chat.ID)
 		return
 	}
 
@@ -554,6 +554,18 @@ func sort(ud *tgbotapi.Update, tokens []string) {
 			break
 		}
 		Client.SetSort(transmission.SortProgress)
+	case "downspeed":
+		if reversed {
+			Client.SetSort(transmission.SortRevDownSpeed)
+			break
+		}
+		Client.SetSort(transmission.SortDownSpeed)
+	case "upspeed":
+		if reversed {
+			Client.SetSort(transmission.SortRevUpSpeed)
+			break
+		}
+		Client.SetSort(transmission.SortUpSpeed)
 	case "download":
 		if reversed {
 			Client.SetSort(transmission.SortRevDownloaded)
