@@ -132,87 +132,87 @@ func main() {
 		command := strings.ToLower(tokens[0])
 
 		switch command {
-		case "list", "/list":
+		case "list", "/list", "li", "/li":
 			// list torrents
 			go list(update, tokens[1:])
 
-		case "head", "/head":
+		case "head", "/head", "he", "/he":
 			// list the first 5 or n torrents
 			go head(update, tokens[1:])
 
-		case "tail", "/tail":
+		case "tail", "/tail", "ta", "/ta":
 			// list the last 5 or n torrents
 			go tail(update, tokens[1:])
 
-		case "downs", "/downs":
+		case "downs", "/downs", "do", "/do":
 			// list downloading
 			go downs(update)
 
-		case "seeding", "/seeding":
+		case "seeding", "/seeding", "sd", "/sd":
 			// list seeding
 			go seeding(update)
 
-		case "paused", "/paused":
+		case "paused", "/paused", "pa", "/pa":
 			// list puased torrents
 			go paused(update)
 
-		case "checking", "/checking":
+		case "checking", "/checking", "ch", "/ch":
 			// list verifying torrents
 			go checking(update)
 
-		case "active", "/active":
+		case "active", "/active", "ac", "/ac":
 			// list active torrents
 			go active(update)
 
-		case "errors", "/errors":
+		case "errors", "/errors", "er", "/er":
 			// list torrents with errors
 			go errors(update)
 
-		case "sort", "/sort":
+		case "sort", "/sort", "so", "/so":
 			// sort torrents
 			go sort(update, tokens[1:])
 
-		case "trackers", "/trackers":
+		case "trackers", "/trackers", "tr", "/tr":
 			// list trackers
 			go trackers(update)
 
-		case "add", "/add":
+		case "add", "/add", "ad", "/ad":
 			// takes url to a torrent to add it
 			go add(update, tokens[1:])
 
-		case "search", "/search", "grep", "/grep":
+		case "search", "/search", "se", "/se":
 			// search for a torrent
 			go search(update, tokens[1:])
 
-		case "latest", "/latest":
+		case "latest", "/latest", "la", "/la":
 			// get the latest torrents
 			go latest(update, tokens[1:])
 
-		case "info", "/info":
+		case "info", "/info", "in", "/in":
 			// gets info on specific torrent
 			go info(update, tokens[1:])
 
-		case "stop", "/stop":
+		case "stop", "/stop", "sp", "/sp":
 			// stop one torrent or more
 			go stop(update, tokens[1:])
 
-		case "start", "/start":
+		case "start", "/start", "st", "/st":
 			// starts one torrent or more
 			go start(update, tokens[1:])
 
-		case "check", "/check":
+		case "check", "/check", "ck", "/ck":
 			// verify a torrent or torrents
 			go check(update, tokens[1:])
 
-		case "stats", "/stats":
+		case "stats", "/stats", "sa", "/sa":
 			// print transmission stats
 			go stats(update)
 
-		case "speed", "/speed":
+		case "speed", "/speed", "ss", "/ss":
 			// print current download and upload speeds
 			go speed(update)
 
-		case "count", "/count":
+		case "count", "/count", "co", "/co":
 			// sends current torrents count per status
 			go count(update)
 
@@ -654,7 +654,7 @@ func add(ud tgbotapi.Update, tokens []string) {
 			send("add: error adding "+url, ud.Message.Chat.ID)
 			continue
 		}
-		send("Added: "+torrent.Name, ud.Message.Chat.ID)
+		send(fmt.Sprintf("Added: <%d> %s", torrent.ID, torrent.Name), ud.Message.Chat.ID)
 	}
 }
 
