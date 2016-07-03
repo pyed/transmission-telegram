@@ -117,12 +117,13 @@ func init() {
 
 func main() {
 	for update := range Updates {
-		// ignore anyone other than 'master'
-		if strings.ToLower(update.Message.From.UserName) != strings.ToLower(Master) {
-			continue
-		}
 		// ignore edited messages
 		if update.Message == nil {
+			continue
+		}
+
+		// ignore anyone other than 'master'
+		if strings.ToLower(update.Message.From.UserName) != strings.ToLower(Master) {
 			continue
 		}
 
@@ -209,7 +210,7 @@ func main() {
 
 		case "speed", "/speed":
 			// print current download and upload speeds
-			go speed(&update)
+			go speed(update)
 
 		case "count", "/count":
 			// sends current torrents count per status
@@ -944,15 +945,34 @@ func stats(ud *tgbotapi.Update) {
 }
 
 // speed will echo back the current download and upload speeds
-func speed(ud *tgbotapi.Update) {
-	stats, err := Client.GetStats()
-	if err != nil {
-		send("speed: "+err.Error(), ud.Message.Chat.ID)
-		return
+func speed(ud tgbotapi.Update) {
+	// keep track of the returned message ID from 'send()' to edit the message.
+	var msgID int
+	for i := 0; i < 10; i++ {
+		stats, err := Client.GetStats()
+		if err != nil {
+			send("speed: "+err.Error(), ud.Message.Chat.ID)
+			return
+		}
+
+		msg := fmt.Sprintf("↓ %s  ↑ %s", humanize.Bytes(stats.DownloadSpeed), humanize.Bytes(stats.UploadSpeed))
+
+		// if we haven't send a message, send it and save the message ID to edit it the next iteration
+		if msgID == 0 {
+			msgID = send(msg, ud.Message.Chat.ID)
+			time.Sleep(time.Second * 2)
+			continue
+		}
+
+		// we have sent the message, let's update.
+		editConf := tgbotapi.NewEditMessageText(ud.Message.Chat.ID, msgID, msg)
+		Bot.Send(editConf)
+		time.Sleep(time.Second * 2)
 	}
 
-	msg := fmt.Sprintf("↓ %s  ↑ %s", humanize.Bytes(stats.DownloadSpeed), humanize.Bytes(stats.UploadSpeed))
-	send(msg, ud.Message.Chat.ID)
+	// after the 10th iteration, show dashes to indicate that we are done updating.
+	editConf := tgbotapi.NewEditMessageText(ud.Message.Chat.ID, msgID, "↓ - B  ↑ - B")
+	Bot.Send(editConf)
 }
 
 // count returns current torrents count per status
@@ -1049,8 +1069,8 @@ func version(ud *tgbotapi.Update) {
 	send(fmt.Sprintf("Transmission %s\nTransmission-telegram %s", Client.Version(), VERSION), ud.Message.Chat.ID)
 }
 
-// send takes a chat id and a message to send.
-func send(text string, chatID int64) {
+// send takes a chat id and a message to send, returns the message id of the send message
+func send(text string, chatID int64) int {
 	// set typing action
 	action := tgbotapi.NewChatAction(chatID, tgbotapi.ChatTyping)
 	Bot.Send(action)
@@ -1076,7 +1096,11 @@ LenCheck:
 	// if msgRuneCount < 4096, send it normally
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.DisableWebPagePreview = true
-	if _, err := Bot.Send(msg); err != nil {
+
+	resp, err := Bot.Send(msg)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "send error: %s\n", err.Error())
 	}
+
+	return resp.MessageID
 }
