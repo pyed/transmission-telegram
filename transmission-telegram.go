@@ -179,7 +179,7 @@ func main() {
 			// takes url to a torrent to add it
 			go add(&update, tokens[1:])
 
-		case "search", "/search":
+		case "search", "/search", "grep", "/grep":
 			// search for a torrent
 			go search(&update, tokens[1:])
 
