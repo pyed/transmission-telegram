@@ -134,79 +134,79 @@ func main() {
 		switch command {
 		case "list", "/list":
 			// list torrents
-			go list(&update, tokens[1:])
+			go list(update, tokens[1:])
 
 		case "head", "/head":
 			// list the first 5 or n torrents
-			go head(&update, tokens[1:])
+			go head(update, tokens[1:])
 
 		case "tail", "/tail":
 			// list the last 5 or n torrents
-			go tail(&update, tokens[1:])
+			go tail(update, tokens[1:])
 
 		case "downs", "/downs":
 			// list downloading
-			go downs(&update)
+			go downs(update)
 
 		case "seeding", "/seeding":
 			// list seeding
-			go seeding(&update)
+			go seeding(update)
 
 		case "paused", "/paused":
 			// list puased torrents
-			go paused(&update)
+			go paused(update)
 
 		case "checking", "/checking":
 			// list verifying torrents
-			go checking(&update)
+			go checking(update)
 
 		case "active", "/active":
 			// list active torrents
-			go active(&update)
+			go active(update)
 
 		case "errors", "/errors":
 			// list torrents with errors
-			go errors(&update)
+			go errors(update)
 
 		case "sort", "/sort":
 			// sort torrents
-			go sort(&update, tokens[1:])
+			go sort(update, tokens[1:])
 
 		case "trackers", "/trackers":
 			// list trackers
-			go trackers(&update)
+			go trackers(update)
 
 		case "add", "/add":
 			// takes url to a torrent to add it
-			go add(&update, tokens[1:])
+			go add(update, tokens[1:])
 
 		case "search", "/search", "grep", "/grep":
 			// search for a torrent
-			go search(&update, tokens[1:])
+			go search(update, tokens[1:])
 
 		case "latest", "/latest":
 			// get the latest torrents
-			go latest(&update, tokens[1:])
+			go latest(update, tokens[1:])
 
 		case "info", "/info":
 			// gets info on specific torrent
-			go info(&update, tokens[1:])
+			go info(update, tokens[1:])
 
 		case "stop", "/stop":
 			// stop one torrent or more
-			go stop(&update, tokens[1:])
+			go stop(update, tokens[1:])
 
 		case "start", "/start":
 			// starts one torrent or more
-			go start(&update, tokens[1:])
+			go start(update, tokens[1:])
 
 		case "check", "/check":
 			// verify a torrent or torrents
-			go check(&update, tokens[1:])
+			go check(update, tokens[1:])
 
 		case "stats", "/stats":
 			// print transmission stats
-			go stats(&update)
+			go stats(update)
 
 		case "speed", "/speed":
 			// print current download and upload speeds
@@ -214,25 +214,25 @@ func main() {
 
 		case "count", "/count":
 			// sends current torrents count per status
-			go count(&update)
+			go count(update)
 
 		case "del", "/del":
 			// deletes a torrent but keep its data
-			go del(&update, tokens[1:])
+			go del(update, tokens[1:])
 
 		case "deldata", "/deldata":
 			// deletes a torrents and its data
-			go deldata(&update, tokens[1:])
+			go deldata(update, tokens[1:])
 
 		case "help", "/help":
 			// prints a help message
 		case "version", "/version":
 			// print transmission and transmission-telegram versions
-			go version(&update)
+			go version(update)
 
 		case "":
 			// might be a file received
-			go receiveTorrent(&update)
+			go receiveTorrent(update)
 
 		default:
 			// no such command, try help
@@ -243,7 +243,7 @@ func main() {
 }
 
 // list will form and send a list of all the torrents
-func list(ud *tgbotapi.Update, tokens []string) {
+func list(ud tgbotapi.Update, tokens []string) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
 		send("list: "+err.Error(), ud.Message.Chat.ID)
@@ -280,7 +280,7 @@ func list(ud *tgbotapi.Update, tokens []string) {
 }
 
 // head will list the first 5 or n torrents
-func head(ud *tgbotapi.Update, tokens []string) {
+func head(ud tgbotapi.Update, tokens []string) {
 	var (
 		n   = 5 // default to 5
 		err error
@@ -319,7 +319,7 @@ func head(ud *tgbotapi.Update, tokens []string) {
 }
 
 // tail lists the last 5 or n torrents
-func tail(ud *tgbotapi.Update, tokens []string) {
+func tail(ud tgbotapi.Update, tokens []string) {
 	var (
 		n   = 5 // default to 5
 		err error
@@ -357,7 +357,7 @@ func tail(ud *tgbotapi.Update, tokens []string) {
 }
 
 // downs will send the names of torrents with status 'Downloading' or in queue to
-func downs(ud *tgbotapi.Update) {
+func downs(ud tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
 		send("downs: "+err.Error(), ud.Message.Chat.ID)
@@ -381,7 +381,7 @@ func downs(ud *tgbotapi.Update) {
 }
 
 // seeding will send the names of the torrents with the status 'Seeding' or in the queue to
-func seeding(ud *tgbotapi.Update) {
+func seeding(ud tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
 		send("seeding: "+err.Error(), ud.Message.Chat.ID)
@@ -406,7 +406,7 @@ func seeding(ud *tgbotapi.Update) {
 }
 
 // paused will send the names of the torrents with status 'Paused'
-func paused(ud *tgbotapi.Update) {
+func paused(ud tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
 		send("paused: "+err.Error(), ud.Message.Chat.ID)
@@ -432,7 +432,7 @@ func paused(ud *tgbotapi.Update) {
 }
 
 // checking will send the names of torrents with the status 'verifying' or in the queue to
-func checking(ud *tgbotapi.Update) {
+func checking(ud tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
 		send("checking: "+err.Error(), ud.Message.Chat.ID)
@@ -459,7 +459,7 @@ func checking(ud *tgbotapi.Update) {
 }
 
 // active will send torrents that are actively downloading or uploading
-func active(ud *tgbotapi.Update) {
+func active(ud tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
 		send("active: "+err.Error(), ud.Message.Chat.ID)
@@ -484,7 +484,7 @@ func active(ud *tgbotapi.Update) {
 }
 
 // errors will send torrents with errors
-func errors(ud *tgbotapi.Update) {
+func errors(ud tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
 		send("errors: "+err.Error(), ud.Message.Chat.ID)
@@ -506,7 +506,7 @@ func errors(ud *tgbotapi.Update) {
 }
 
 // sort changes torrents sorting
-func sort(ud *tgbotapi.Update, tokens []string) {
+func sort(ud tgbotapi.Update, tokens []string) {
 	if len(tokens) == 0 {
 		send(`sort takes one of (id, name, age, size, progress, downspeed, upspeed, download, upload, ratio)
 			optionally start with (rev) for reversed order
@@ -596,7 +596,7 @@ func sort(ud *tgbotapi.Update, tokens []string) {
 var trackerRegex = regexp.MustCompile(`[https?|udp]://([^:/]*)`)
 
 // trackers will send a list of trackers and how many torrents each one has
-func trackers(ud *tgbotapi.Update) {
+func trackers(ud tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
 		send("trackers: "+err.Error(), ud.Message.Chat.ID)
@@ -633,7 +633,7 @@ func trackers(ud *tgbotapi.Update) {
 }
 
 // add takes an URL to a .torrent file to add it to transmission
-func add(ud *tgbotapi.Update, tokens []string) {
+func add(ud tgbotapi.Update, tokens []string) {
 	if len(tokens) == 0 {
 		send("add: needs atleast one URL", ud.Message.Chat.ID)
 		return
@@ -659,7 +659,7 @@ func add(ud *tgbotapi.Update, tokens []string) {
 }
 
 // receiveTorrent gets an update that potentially has a .torrent file to add
-func receiveTorrent(ud *tgbotapi.Update) {
+func receiveTorrent(ud tgbotapi.Update) {
 	if ud.Message.Document.FileID == "" {
 		return // has no document
 	}
@@ -677,7 +677,7 @@ func receiveTorrent(ud *tgbotapi.Update) {
 }
 
 // search takes a query and returns torrents with match
-func search(ud *tgbotapi.Update, tokens []string) {
+func search(ud tgbotapi.Update, tokens []string) {
 	// make sure that we got a query
 	if len(tokens) == 0 {
 		send("search: needs an argument", ud.Message.Chat.ID)
@@ -712,7 +712,7 @@ func search(ud *tgbotapi.Update, tokens []string) {
 }
 
 // latest takes n and returns the latest n torrents
-func latest(ud *tgbotapi.Update, tokens []string) {
+func latest(ud tgbotapi.Update, tokens []string) {
 	var (
 		n   = 5 // default to 5
 		err error
@@ -752,7 +752,7 @@ func latest(ud *tgbotapi.Update, tokens []string) {
 }
 
 // info takes an id of a torrent and returns some info about it
-func info(ud *tgbotapi.Update, tokens []string) {
+func info(ud tgbotapi.Update, tokens []string) {
 	if len(tokens) == 0 {
 		send("info: needs a torrent ID number", ud.Message.Chat.ID)
 		return
@@ -784,7 +784,7 @@ func info(ud *tgbotapi.Update, tokens []string) {
 }
 
 // stop takes id[s] of torrent[s] or 'all' to stop them
-func stop(ud *tgbotapi.Update, tokens []string) {
+func stop(ud tgbotapi.Update, tokens []string) {
 	// make sure that we got at least one argument
 	if len(tokens) == 0 {
 		send("stop: needs an argument", ud.Message.Chat.ID)
@@ -823,7 +823,7 @@ func stop(ud *tgbotapi.Update, tokens []string) {
 }
 
 // start takes id[s] of torrent[s] or 'all' to start them
-func start(ud *tgbotapi.Update, tokens []string) {
+func start(ud tgbotapi.Update, tokens []string) {
 	// make sure that we got at least one argument
 	if len(tokens) == 0 {
 		send("start: needs an argument", ud.Message.Chat.ID)
@@ -863,7 +863,7 @@ func start(ud *tgbotapi.Update, tokens []string) {
 }
 
 // check takes id[s] of torrent[s] or 'all' to verify them
-func check(ud *tgbotapi.Update, tokens []string) {
+func check(ud tgbotapi.Update, tokens []string) {
 	// make sure that we got at least one argument
 	if len(tokens) == 0 {
 		send("check: needs an argument", ud.Message.Chat.ID)
@@ -904,7 +904,7 @@ func check(ud *tgbotapi.Update, tokens []string) {
 }
 
 // stats echo back transmission stats
-func stats(ud *tgbotapi.Update) {
+func stats(ud tgbotapi.Update) {
 	stats, err := Client.GetStats()
 	if err != nil {
 		send("stats: "+err.Error(), ud.Message.Chat.ID)
@@ -976,7 +976,7 @@ func speed(ud tgbotapi.Update) {
 }
 
 // count returns current torrents count per status
-func count(ud *tgbotapi.Update) {
+func count(ud tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
 		send("count: "+err.Error(), ud.Message.Chat.ID)
@@ -1012,7 +1012,7 @@ func count(ud *tgbotapi.Update) {
 }
 
 // del takes an id or more, and delete the corresponding torrent/s
-func del(ud *tgbotapi.Update, tokens []string) {
+func del(ud tgbotapi.Update, tokens []string) {
 	// make sure that we got an argument
 	if len(tokens) == 0 {
 		send("del: needs an ID", ud.Message.Chat.ID)
@@ -1038,7 +1038,7 @@ func del(ud *tgbotapi.Update, tokens []string) {
 }
 
 // deldata takes an id or more, and delete the corresponding torrent/s with their data
-func deldata(ud *tgbotapi.Update, tokens []string) {
+func deldata(ud tgbotapi.Update, tokens []string) {
 	// make sure that we got an argument
 	if len(tokens) == 0 {
 		send("deldata: needs an ID", ud.Message.Chat.ID)
@@ -1065,7 +1065,7 @@ func deldata(ud *tgbotapi.Update, tokens []string) {
 // help
 
 // version sends transmission version + transmission-telegram version
-func version(ud *tgbotapi.Update) {
+func version(ud tgbotapi.Update) {
 	send(fmt.Sprintf("Transmission %s\nTransmission-telegram %s", Client.Version(), VERSION), ud.Message.Chat.ID)
 }
 
