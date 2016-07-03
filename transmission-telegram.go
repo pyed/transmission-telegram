@@ -368,9 +368,7 @@ func downs(ud *tgbotapi.Update) {
 		// Downloading or in queue to download
 		if torrents[i].Status == transmission.StatusDownloading ||
 			torrents[i].Status == transmission.StatusDownloadPending {
-			buf.WriteString(fmt.Sprintf("<%d> %s\n%s (%.1f%%) ↓ %s  ↑ %s R:%s\n\n",
-				torrents[i].ID, torrents[i].Name, torrents[i].TorrentStatus(), torrents[i].PercentDone*100,
-				humanize.Bytes(torrents[i].RateDownload), humanize.Bytes(torrents[i].RateUpload), torrents[i].Ratio()))
+			buf.WriteString(fmt.Sprintf("<%d> %s\n", torrents[i].ID, torrents[i].Name))
 		}
 	}
 
@@ -393,10 +391,7 @@ func seeding(ud *tgbotapi.Update) {
 	for i := range torrents {
 		if torrents[i].Status == transmission.StatusSeeding ||
 			torrents[i].Status == transmission.StatusSeedPending {
-			buf.WriteString(fmt.Sprintf("<%d> %s\n%s DL: %s UL: %s R:%s\n\n",
-				torrents[i].ID, torrents[i].Name, torrents[i].TorrentStatus(),
-				humanize.Bytes(torrents[i].DownloadedEver), humanize.Bytes(torrents[i].UploadedEver),
-				torrents[i].Ratio()))
+			buf.WriteString(fmt.Sprintf("<%d> %s\n", torrents[i].ID, torrents[i].Name))
 		}
 	}
 
@@ -462,7 +457,7 @@ func checking(ud *tgbotapi.Update) {
 	send(buf.String(), ud.Message.Chat.ID)
 }
 
-// active will send torrents that are actively uploading
+// active will send torrents that are actively downloading or uploading
 func active(ud *tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
@@ -472,7 +467,8 @@ func active(ud *tgbotapi.Update) {
 
 	buf := new(bytes.Buffer)
 	for i := range torrents {
-		if torrents[i].RateUpload > 0 {
+		if torrents[i].RateDownload > 0 ||
+			torrents[i].RateUpload > 0 {
 			buf.WriteString(fmt.Sprintf("<%d> %s\n%s (%.1f%%) ↓ %s  ↑ %s R:%s\n\n",
 				torrents[i].ID, torrents[i].Name, torrents[i].TorrentStatus(),
 				torrents[i].PercentDone*100, humanize.Bytes(torrents[i].RateDownload),
