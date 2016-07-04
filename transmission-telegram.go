@@ -416,7 +416,7 @@ func paused(ud tgbotapi.Update) {
 	buf := new(bytes.Buffer)
 	for i := range torrents {
 		if torrents[i].Status == transmission.StatusStopped {
-			buf.WriteString(fmt.Sprintf("<%d> %s\n%s (%.1f%%) DL: %s UL: %s R:%s\n\n",
+			buf.WriteString(fmt.Sprintf("<%d> %s\n%s (%.1f%%) DL: %s UL: %s  R: %s\n\n",
 				torrents[i].ID, torrents[i].Name, torrents[i].TorrentStatus(),
 				torrents[i].PercentDone*100, humanize.Bytes(torrents[i].DownloadedEver),
 				humanize.Bytes(torrents[i].UploadedEver), torrents[i].Ratio()))
@@ -470,7 +470,7 @@ func active(ud tgbotapi.Update) {
 	for i := range torrents {
 		if torrents[i].RateDownload > 0 ||
 			torrents[i].RateUpload > 0 {
-			buf.WriteString(fmt.Sprintf("<%d> %s\n%s (%.1f%%) ↓ %s  ↑ %s R:%s\n\n",
+			buf.WriteString(fmt.Sprintf("<%d> %s\n%s (%.1f%%) ↓ %s  ↑ %s  R: %s\n\n",
 				torrents[i].ID, torrents[i].Name, torrents[i].TorrentStatus(),
 				torrents[i].PercentDone*100, humanize.Bytes(torrents[i].RateDownload),
 				humanize.Bytes(torrents[i].RateUpload), torrents[i].Ratio()))
@@ -758,29 +758,71 @@ func info(ud tgbotapi.Update, tokens []string) {
 		return
 	}
 
-	// try to read the id
-	num, err := strconv.Atoi(tokens[0])
-	if err != nil {
-		send(fmt.Sprintf("info: %s is not a number", tokens[0]), ud.Message.Chat.ID)
-		return
+	for _, id := range tokens {
+		torrentID, err := strconv.Atoi(id)
+		if err != nil {
+			send(fmt.Sprintf("info: %s is not a number", id), ud.Message.Chat.ID)
+			continue
+		}
+
+		// get the torrent
+		torrent, err := Client.GetTorrent(torrentID)
+		if err != nil {
+			send(fmt.Sprintf("info: Can't find a torrent with an ID of %d", torrentID), ud.Message.Chat.ID)
+			continue
+		}
+
+		// get the trackers using 'trackerRegex'
+		var trackers string
+		for _, tracker := range torrent.Trackers {
+			sm := trackerRegex.FindSubmatch([]byte(tracker.Announce))
+			if len(sm) > 1 {
+				trackers += string(sm[1]) + " "
+			}
+		}
+
+		// format the info
+		info := fmt.Sprintf("<%d> %s\n%s\t%s of %s (%.1f%%) ↓ %s  ↑ %s, R: %s\nDL: %s, UP: %s\nAdded: %s, ETA: %s\nTrackers: %s",
+			torrent.ID, torrent.Name, torrent.TorrentStatus(), humanize.Bytes(torrent.Have()), humanize.Bytes(torrent.SizeWhenDone),
+			torrent.PercentDone*100, humanize.Bytes(torrent.RateDownload), humanize.Bytes(torrent.RateUpload), torrent.Ratio(),
+			humanize.Bytes(torrent.DownloadedEver), humanize.Bytes(torrent.UploadedEver), time.Unix(torrent.AddedDate, 0).Format(time.Stamp),
+			torrent.ETA(), trackers)
+
+		// send it
+		msgID := send(info, ud.Message.Chat.ID)
+
+		// this go-routine will make the info live for 20 seconds
+		// takes trackers so we don't have to regex them over and over.
+		go func(trackers string, torrentID, msgID int) {
+			for i := 0; i < 10; i++ {
+				torrent, err := Client.GetTorrent(torrentID)
+				if err != nil {
+					continue // skip this iteration if there's an error retrieving the torrent's info
+				}
+
+				info := fmt.Sprintf("<%d> %s\n%s\t%s of %s (%.1f%%) ↓ %s  ↑ %s, R: %s\nDL: %s, UP: %s\nAdded: %s, ETA: %s\nTrackers: %s",
+					torrent.ID, torrent.Name, torrent.TorrentStatus(), humanize.Bytes(torrent.Have()), humanize.Bytes(torrent.SizeWhenDone),
+					torrent.PercentDone*100, humanize.Bytes(torrent.RateDownload), humanize.Bytes(torrent.RateUpload), torrent.Ratio(),
+					humanize.Bytes(torrent.DownloadedEver), humanize.Bytes(torrent.UploadedEver), time.Unix(torrent.AddedDate, 0).Format(time.Stamp),
+					torrent.ETA(), trackers)
+
+				// update the message
+				editConf := tgbotapi.NewEditMessageText(ud.Message.Chat.ID, msgID, info)
+				Bot.Send(editConf)
+				time.Sleep(time.Second * 2)
+
+			}
+
+			// at the end write dashes to indicate that we are done being live.
+			info := fmt.Sprintf("<%d> %s\n%s\t%s of %s (%.1f%%) ↓ - B  ↑ - B, R: %s\nDL: %s, UP: %s\nAdded: %s, ETA: -\nTrackers: %s",
+				torrent.ID, torrent.Name, torrent.TorrentStatus(), humanize.Bytes(torrent.Have()), humanize.Bytes(torrent.SizeWhenDone),
+				torrent.PercentDone*100, torrent.Ratio(), humanize.Bytes(torrent.DownloadedEver), humanize.Bytes(torrent.UploadedEver),
+				time.Unix(torrent.AddedDate, 0).Format(time.Stamp), trackers)
+
+			editConf := tgbotapi.NewEditMessageText(ud.Message.Chat.ID, msgID, info)
+			Bot.Send(editConf)
+		}(trackers, torrentID, msgID)
 	}
-
-	// get the torrent
-	torrent, err := Client.GetTorrent(num)
-	if err != nil {
-		send(fmt.Sprintf("info: Can't find a torrent with an ID of %d", num), ud.Message.Chat.ID)
-		return
-	}
-
-	// format the info
-	info := fmt.Sprintf("<%d> %s\n%s\t%s of %s (%.1f%%)\t↓ %s  ↑ %s R:%s\nUP: %s  DL: %s  Added: %s  ETA: %s\nTrackers: %s",
-		torrent.ID, torrent.Name, torrent.TorrentStatus(), humanize.Bytes(torrent.DownloadedEver), humanize.Bytes(torrent.SizeWhenDone),
-		torrent.PercentDone*100, humanize.Bytes(torrent.RateDownload), humanize.Bytes(torrent.RateUpload), torrent.Ratio(),
-		humanize.Bytes(torrent.UploadedEver), humanize.Bytes(torrent.DownloadedEver), time.Unix(torrent.AddedDate, 0).Format(time.Stamp),
-		torrent.ETA(), torrent.GetTrackers())
-
-	// send it
-	send(info, ud.Message.Chat.ID)
 }
 
 // stop takes id[s] of torrent[s] or 'all' to stop them
