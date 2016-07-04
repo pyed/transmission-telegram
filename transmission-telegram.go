@@ -33,6 +33,9 @@ var (
 	// telegram
 	Bot     *tgbotapi.BotAPI
 	Updates <-chan tgbotapi.Update
+
+	// interval in seconds for live updates, affects "active", "info", "speed"
+	interval time.Duration = 2
 )
 
 // init flags
@@ -470,9 +473,9 @@ func active(ud tgbotapi.Update) {
 	for i := range torrents {
 		if torrents[i].RateDownload > 0 ||
 			torrents[i].RateUpload > 0 {
-			buf.WriteString(fmt.Sprintf("<%d> %s\n%s (%.1f%%) ↓ %s  ↑ %s  R: %s\n\n",
-				torrents[i].ID, torrents[i].Name, torrents[i].TorrentStatus(),
-				torrents[i].PercentDone*100, humanize.Bytes(torrents[i].RateDownload),
+			buf.WriteString(fmt.Sprintf("<%d> %s\n%s %s of %s (%.1f%%) ↓ %s  ↑ %s, R: %s\n\n",
+				torrents[i].ID, torrents[i].Name, torrents[i].TorrentStatus(), humanize.Bytes(torrents[i].Have()),
+				humanize.Bytes(torrents[i].SizeWhenDone), torrents[i].PercentDone*100, humanize.Bytes(torrents[i].RateDownload),
 				humanize.Bytes(torrents[i].RateUpload), torrents[i].Ratio()))
 		}
 	}
@@ -480,7 +483,52 @@ func active(ud tgbotapi.Update) {
 		send("No active torrents", ud.Message.Chat.ID)
 		return
 	}
-	send(buf.String(), ud.Message.Chat.ID)
+
+	msgID := send(buf.String(), ud.Message.Chat.ID)
+
+	// keep the active list live for 20 seconds
+	time.Sleep(time.Second * interval)
+	for i := 0; i < 10; i++ {
+		// reset the buffer to reuse it
+		buf.Reset()
+
+		// update torrents
+		torrents, err = Client.GetTorrents()
+		if err != nil {
+			continue // if there was error getting torrents, skip to the next iteration
+		}
+
+		// do the same loop again
+		for i := range torrents {
+			if torrents[i].RateDownload > 0 ||
+				torrents[i].RateUpload > 0 {
+				buf.WriteString(fmt.Sprintf("<%d> %s\n%s %s of %s (%.1f%%) ↓ %s  ↑ %s, R: %s\n\n",
+					torrents[i].ID, torrents[i].Name, torrents[i].TorrentStatus(), humanize.Bytes(torrents[i].Have()),
+					humanize.Bytes(torrents[i].SizeWhenDone), torrents[i].PercentDone*100, humanize.Bytes(torrents[i].RateDownload),
+					humanize.Bytes(torrents[i].RateUpload), torrents[i].Ratio()))
+			}
+		}
+
+		// no need to check if it is empty, as if the buffer is empty telegram won't change the message
+		editConf := tgbotapi.NewEditMessageText(ud.Message.Chat.ID, msgID, buf.String())
+		Bot.Send(editConf)
+		time.Sleep(time.Second * interval)
+	}
+
+	// replace the speed with dashes to indicate that we are done being live
+	buf.Reset()
+	for i := range torrents {
+		if torrents[i].RateDownload > 0 ||
+			torrents[i].RateUpload > 0 {
+			buf.WriteString(fmt.Sprintf("<%d> %s\n%s %s of %s (%.1f%%) ↓ - B  ↑ - B, R: %s\n\n",
+				torrents[i].ID, torrents[i].Name, torrents[i].TorrentStatus(), humanize.Bytes(torrents[i].Have()),
+				humanize.Bytes(torrents[i].SizeWhenDone), torrents[i].PercentDone*100, torrents[i].Ratio()))
+		}
+	}
+
+	editConf := tgbotapi.NewEditMessageText(ud.Message.Chat.ID, msgID, buf.String())
+	Bot.Send(editConf)
+
 }
 
 // errors will send torrents with errors
@@ -809,7 +857,7 @@ func info(ud tgbotapi.Update, tokens []string) {
 				// update the message
 				editConf := tgbotapi.NewEditMessageText(ud.Message.Chat.ID, msgID, info)
 				Bot.Send(editConf)
-				time.Sleep(time.Second * 2)
+				time.Sleep(time.Second * interval)
 
 			}
 
@@ -1002,14 +1050,14 @@ func speed(ud tgbotapi.Update) {
 		// if we haven't send a message, send it and save the message ID to edit it the next iteration
 		if msgID == 0 {
 			msgID = send(msg, ud.Message.Chat.ID)
-			time.Sleep(time.Second * 2)
+			time.Sleep(time.Second * interval)
 			continue
 		}
 
 		// we have sent the message, let's update.
 		editConf := tgbotapi.NewEditMessageText(ud.Message.Chat.ID, msgID, msg)
 		Bot.Send(editConf)
-		time.Sleep(time.Second * 2)
+		time.Sleep(time.Second * interval)
 	}
 
 	// after the 10th iteration, show dashes to indicate that we are done updating.
