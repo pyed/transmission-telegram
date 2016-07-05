@@ -36,6 +36,8 @@ var (
 
 	// interval in seconds for live updates, affects "active", "info", "speed"
 	interval time.Duration = 2
+	// duration controls how many intervals will happen
+	duration = 10
 )
 
 // init flags
@@ -58,7 +60,7 @@ func init() {
 	// make sure that we have the two madatory arguments: telegram token & master's handler.
 	if BotToken == "" ||
 		Master == "" {
-		fmt.Fprintf(os.Stderr, "Error: Mandatory argument missing!\n\n")
+		fmt.Fprintf(os.Stderr, "Error: Mandatory argument missing! (-token or -master)\n\n")
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -71,29 +73,13 @@ func init() {
 
 // init transmission
 func init() {
-	// set transmission.Config, needed to establish a connection with transmission
-	// conf := transmission.Config{
-	// 	Address:  RpcUrl,
-	// 	User:     Username,
-	// 	Password: Password,
-	// }
+	var err error
+	Client, err = transmission.New(RpcUrl, Username, Password)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: Make sure you have the right URL, Username and Password\n")
+		os.Exit(1)
+	}
 
-	// transmission.New() never returns an error, we will ignore it and test with client.Session.Update()
-	Client = transmission.New(RpcUrl, Username, Password)
-	// if err := Client.Session.Update(); err != nil {
-
-	// try to predict the error message, as it vague coming from pyed/transmission
-	// 	if strings.HasPrefix(err.Error(), "invalid character") { // means the user or the pass is wrong.
-	// 		fmt.Fprintf(os.Stderr, "Transmission's Username or Password is wrong.\n\n")
-
-	// 	} else { // any other error is probaby because of the URL
-	// 		fmt.Fprintf(os.Stderr, "Error: Couldn't connect to: %s\n", RpcUrl)
-	// 		fmt.Fprintf(os.Stderr, "Make sure to pass the right full RPC URL e.g. http://localhost:9091/transmission/rpc\n\n")
-	// 	}
-	// 	// send the vague error message too
-	// 	fmt.Fprintf(os.Stderr, "JSONError: %s\n", err)
-	// 	os.Exit(1)
-	// }
 }
 
 // init telegram
@@ -486,9 +472,9 @@ func active(ud tgbotapi.Update) {
 
 	msgID := send(buf.String(), ud.Message.Chat.ID)
 
-	// keep the active list live for 20 seconds
+	// keep the active list live for 'duration * interval'
 	time.Sleep(time.Second * interval)
-	for i := 0; i < 10; i++ {
+	for i := 0; i < duration; i++ {
 		// reset the buffer to reuse it
 		buf.Reset()
 
@@ -839,10 +825,10 @@ func info(ud tgbotapi.Update, tokens []string) {
 		// send it
 		msgID := send(info, ud.Message.Chat.ID)
 
-		// this go-routine will make the info live for 20 seconds
+		// this go-routine will make the info live for 'duration * interval'
 		// takes trackers so we don't have to regex them over and over.
 		go func(trackers string, torrentID, msgID int) {
-			for i := 0; i < 10; i++ {
+			for i := 0; i < duration; i++ {
 				torrent, err := Client.GetTorrent(torrentID)
 				if err != nil {
 					continue // skip this iteration if there's an error retrieving the torrent's info
@@ -1038,7 +1024,7 @@ func stats(ud tgbotapi.Update) {
 func speed(ud tgbotapi.Update) {
 	// keep track of the returned message ID from 'send()' to edit the message.
 	var msgID int
-	for i := 0; i < 10; i++ {
+	for i := 0; i < duration; i++ {
 		stats, err := Client.GetStats()
 		if err != nil {
 			send("speed: "+err.Error(), ud.Message.Chat.ID)
