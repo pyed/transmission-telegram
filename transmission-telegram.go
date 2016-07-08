@@ -1172,7 +1172,7 @@ func deldata(ud tgbotapi.Update, tokens []string) {
 
 // version sends transmission version + transmission-telegram version
 func version(ud tgbotapi.Update) {
-	send(fmt.Sprintf("Transmission %s\nTransmission-telegram %s", Client.Version(), VERSION), ud.Message.Chat.ID, false)
+	send(fmt.Sprintf("Transmission *%s*\nTransmission-telegram *%s*", Client.Version(), VERSION), ud.Message.Chat.ID, true)
 }
 
 // send takes a chat id and a message to send, returns the message id of the send message
@@ -1185,8 +1185,12 @@ func send(text string, chatID int64, markdown bool) int {
 	// so if our message is > 4096, split it in chunks the send them.
 	msgRuneCount := utf8.RuneCountInString(text)
 LenCheck:
+	stop := 4095
 	if msgRuneCount > 4096 {
-		msg := tgbotapi.NewMessage(chatID, text[:4095])
+		for text[stop] != 10 { // '\n'
+			stop--
+		}
+		msg := tgbotapi.NewMessage(chatID, text[:stop])
 		msg.DisableWebPagePreview = true
 		if markdown {
 			msg.ParseMode = tgbotapi.ModeMarkdown
@@ -1197,7 +1201,7 @@ LenCheck:
 			fmt.Fprintf(os.Stderr, "send error: %s\n", err.Error())
 		}
 		// move to the next chunk
-		text = text[4095:]
+		text = text[stop:]
 		msgRuneCount = utf8.RuneCountInString(text)
 		goto LenCheck
 	}
