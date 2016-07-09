@@ -269,6 +269,11 @@ func list(ud tgbotapi.Update, tokens []string) {
 	}
 
 	if buf.Len() == 0 {
+		// if we got a tracker query show different message
+		if len(tokens) != 0 {
+			send(fmt.Sprintf("list: No tracker matches: *%s*", tokens[0]), ud.Message.Chat.ID, true)
+			return
+		}
 		send("list: No torrents", ud.Message.Chat.ID, false)
 		return
 	}
@@ -305,7 +310,7 @@ func head(ud tgbotapi.Update, tokens []string) {
 	buf := new(bytes.Buffer)
 	for i := range torrents[:n] {
 		torrentName := mdReplacer.Replace(torrents[i].Name) // escape markdown
-		buf.WriteString(fmt.Sprintf("<*%d*> *%s*\n%s `%s` of `%s` (`%.1f%%`) ↓ `%s`  ↑ `%s` R: `%s`\n\n",
+		buf.WriteString(fmt.Sprintf("`<%d>` *%s*\n%s *%s* of *%s* (*%.1f%%*) ↓ *%s*  ↑ *%s* R: *%s*\n\n",
 			torrents[i].ID, torrentName, torrents[i].TorrentStatus(), humanize.Bytes(torrents[i].Have()),
 			humanize.Bytes(torrents[i].SizeWhenDone), torrents[i].PercentDone*100, humanize.Bytes(torrents[i].RateDownload),
 			humanize.Bytes(torrents[i].RateUpload), torrents[i].Ratio()))
@@ -348,7 +353,7 @@ func tail(ud tgbotapi.Update, tokens []string) {
 	buf := new(bytes.Buffer)
 	for _, torrent := range torrents[len(torrents)-n:] {
 		torrentName := mdReplacer.Replace(torrent.Name) // escape markdown
-		buf.WriteString(fmt.Sprintf("<*%d*> *%s*\n%s `%s` of `%s` (`%.1f%%`) ↓ `%s`  ↑ `%s` R: `%s`\n\n",
+		buf.WriteString(fmt.Sprintf("`<%d>` *%s*\n%s *%s* of *%s* (*%.1f%%*) ↓ *%s*  ↑ *%s* R: *%s*\n\n",
 			torrent.ID, torrentName, torrent.TorrentStatus(), humanize.Bytes(torrent.Have()),
 			humanize.Bytes(torrent.SizeWhenDone), torrent.PercentDone*100, humanize.Bytes(torrent.RateDownload),
 			humanize.Bytes(torrent.RateUpload), torrent.Ratio()))
@@ -477,7 +482,7 @@ func active(ud tgbotapi.Update) {
 			torrents[i].RateUpload > 0 {
 			// escape markdown
 			torrentName := mdReplacer.Replace(torrents[i].Name)
-			buf.WriteString(fmt.Sprintf("<*%d*> *%s*\n%s `%s` of `%s` (`%.1f%%`) ↓ `%s`  ↑ `%s` R: `%s`\n\n",
+			buf.WriteString(fmt.Sprintf("`<%d>` *%s*\n%s *%s* of *%s* (*%.1f%%*) ↓ *%s*  ↑ *%s* R: *%s*\n\n",
 				torrents[i].ID, torrentName, torrents[i].TorrentStatus(), humanize.Bytes(torrents[i].Have()),
 				humanize.Bytes(torrents[i].SizeWhenDone), torrents[i].PercentDone*100, humanize.Bytes(torrents[i].RateDownload),
 				humanize.Bytes(torrents[i].RateUpload), torrents[i].Ratio()))
@@ -508,7 +513,7 @@ func active(ud tgbotapi.Update) {
 				torrents[i].RateUpload > 0 {
 				// escape markdown
 				torrentName := mdReplacer.Replace(torrents[i].Name)
-				buf.WriteString(fmt.Sprintf("<*%d*> *%s*\n%s `%s` of `%s` (`%.1f%%`) ↓ `%s`  ↑ `%s` R: `%s`\n\n",
+				buf.WriteString(fmt.Sprintf("`<%d>` *%s*\n%s *%s* of *%s* (*%.1f%%*) ↓ *%s*  ↑ *%s* R: *%s*\n\n",
 					torrents[i].ID, torrentName, torrents[i].TorrentStatus(), humanize.Bytes(torrents[i].Have()),
 					humanize.Bytes(torrents[i].SizeWhenDone), torrents[i].PercentDone*100, humanize.Bytes(torrents[i].RateDownload),
 					humanize.Bytes(torrents[i].RateUpload), torrents[i].Ratio()))
@@ -529,7 +534,7 @@ func active(ud tgbotapi.Update) {
 			torrents[i].RateUpload > 0 {
 			// escape markdown
 			torrentName := mdReplacer.Replace(torrents[i].Name)
-			buf.WriteString(fmt.Sprintf("<*%d*> *%s*\n%s `%s` of `%s` (`%.1f%%`) ↓ `-`  ↑ `-` R: `%s`\n\n",
+			buf.WriteString(fmt.Sprintf("`<%d>` *%s*\n%s *%s* of *%s* (*%.1f%%*) ↓ *-*  ↑ *-* R: *%s*\n\n",
 				torrents[i].ID, torrentName, torrents[i].TorrentStatus(), humanize.Bytes(torrents[i].Have()),
 				humanize.Bytes(torrents[i].SizeWhenDone), torrents[i].PercentDone*100, torrents[i].Ratio()))
 		}
@@ -842,7 +847,7 @@ func info(ud tgbotapi.Update, tokens []string) {
 
 		// format the info
 		torrentName := mdReplacer.Replace(torrent.Name) // escape markdown
-		info := fmt.Sprintf("<*%d*> *%s*\n%s `%s` of `%s` (`%.1f%%`) ↓ `%s`  ↑ `%s` R: `%s`\nDL: `%s` UP: `%s`\nAdded: `%s`, ETA: `%s`\nTrackers: `%s`",
+		info := fmt.Sprintf("`<%d>` *%s*\n%s *%s* of *%s* (*%.1f%%*) ↓ *%s*  ↑ *%s* R: *%s*\nDL: *%s* UP: *%s*\nAdded: *%s*, ETA: *%s*\nTrackers: `%s`",
 			torrent.ID, torrentName, torrent.TorrentStatus(), humanize.Bytes(torrent.Have()), humanize.Bytes(torrent.SizeWhenDone),
 			torrent.PercentDone*100, humanize.Bytes(torrent.RateDownload), humanize.Bytes(torrent.RateUpload), torrent.Ratio(),
 			humanize.Bytes(torrent.DownloadedEver), humanize.Bytes(torrent.UploadedEver), time.Unix(torrent.AddedDate, 0).Format(time.Stamp),
@@ -854,6 +859,7 @@ func info(ud tgbotapi.Update, tokens []string) {
 		// this go-routine will make the info live for 'duration * interval'
 		// takes trackers so we don't have to regex them over and over.
 		go func(trackers string, torrentID, msgID int) {
+			time.Sleep(time.Second * interval)
 			for i := 0; i < duration; i++ {
 				torrent, err := Client.GetTorrent(torrentID)
 				if err != nil {
@@ -861,7 +867,7 @@ func info(ud tgbotapi.Update, tokens []string) {
 				}
 
 				torrentName := mdReplacer.Replace(torrent.Name)
-				info := fmt.Sprintf("<*%d*> *%s*\n%s `%s` of `%s` (`%.1f%%`) ↓ `%s`  ↑ `%s` R: `%s`\nDL: `%s` UP: `%s`\nAdded: `%s`, ETA: `%s`\nTrackers: `%s`",
+				info := fmt.Sprintf("`<%d>` *%s*\n%s *%s* of *%s* (*%.1f%%*) ↓ *%s*  ↑ *%s* R: *%s*\nDL: *%s* UP: *%s*\nAdded: *%s*, ETA: *%s*\nTrackers: `%s`",
 					torrent.ID, torrentName, torrent.TorrentStatus(), humanize.Bytes(torrent.Have()), humanize.Bytes(torrent.SizeWhenDone),
 					torrent.PercentDone*100, humanize.Bytes(torrent.RateDownload), humanize.Bytes(torrent.RateUpload), torrent.Ratio(),
 					humanize.Bytes(torrent.DownloadedEver), humanize.Bytes(torrent.UploadedEver), time.Unix(torrent.AddedDate, 0).Format(time.Stamp),
@@ -877,7 +883,7 @@ func info(ud tgbotapi.Update, tokens []string) {
 
 			// at the end write dashes to indicate that we are done being live.
 			torrentName := mdReplacer.Replace(torrent.Name)
-			info := fmt.Sprintf("<*%d*> *%s*\n%s `%s` of `%s` (`%.1f%%`) ↓ `- B`  ↑ `- B` R: `%s`\nDL: `%s` UP: `%s`\nAdded: `%s`, ETA: `-`\nTrackers: `%s`",
+			info := fmt.Sprintf("`<%d>` *%s*\n%s *%s* of *%s* (*%.1f%%*) ↓ *- B*  ↑ *- B* R: *%s*\nDL: *%s* UP: *%s*\nAdded: *%s*, ETA: *-*\nTrackers: `%s`",
 				torrent.ID, torrentName, torrent.TorrentStatus(), humanize.Bytes(torrent.Have()), humanize.Bytes(torrent.SizeWhenDone),
 				torrent.PercentDone*100, torrent.Ratio(), humanize.Bytes(torrent.DownloadedEver), humanize.Bytes(torrent.UploadedEver),
 				time.Unix(torrent.AddedDate, 0).Format(time.Stamp), trackers)
