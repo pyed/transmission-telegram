@@ -320,7 +320,32 @@ func head(ud tgbotapi.Update, tokens []string) {
 		send("head: No torrents", ud.Message.Chat.ID, false)
 		return
 	}
-	send(buf.String(), ud.Message.Chat.ID, true)
+
+	msgID := send(buf.String(), ud.Message.Chat.ID, true)
+
+	// keep the info live
+	for i := 0; i < duration; i++ {
+		time.Sleep(time.Second * interval)
+		buf.Reset()
+
+		torrents, err := Client.GetTorrents()
+		if err != nil {
+			continue // try again if some error heppened
+		}
+
+		for i := range torrents[:n] {
+			torrentName := mdReplacer.Replace(torrents[i].Name) // escape markdown
+			buf.WriteString(fmt.Sprintf("`<%d>` *%s*\n%s *%s* of *%s* (*%.1f%%*) ↓ *%s*  ↑ *%s* R: *%s*\n\n",
+				torrents[i].ID, torrentName, torrents[i].TorrentStatus(), humanize.Bytes(torrents[i].Have()),
+				humanize.Bytes(torrents[i].SizeWhenDone), torrents[i].PercentDone*100, humanize.Bytes(torrents[i].RateDownload),
+				humanize.Bytes(torrents[i].RateUpload), torrents[i].Ratio()))
+		}
+
+		// no need to check if it is empty, as if the buffer is empty telegram won't change the message
+		editConf := tgbotapi.NewEditMessageText(ud.Message.Chat.ID, msgID, buf.String())
+		editConf.ParseMode = tgbotapi.ModeMarkdown
+		Bot.Send(editConf)
+	}
 
 }
 
@@ -363,7 +388,33 @@ func tail(ud tgbotapi.Update, tokens []string) {
 		send("tail: No torrents", ud.Message.Chat.ID, false)
 		return
 	}
-	send(buf.String(), ud.Message.Chat.ID, true)
+
+	msgID := send(buf.String(), ud.Message.Chat.ID, true)
+
+	// keep the info live
+	for i := 0; i < duration; i++ {
+		time.Sleep(time.Second * interval)
+		buf.Reset()
+
+		torrents, err := Client.GetTorrents()
+		if err != nil {
+			continue // try again if some error heppened
+		}
+
+		for _, torrent := range torrents[len(torrents)-n:] {
+			torrentName := mdReplacer.Replace(torrent.Name) // escape markdown
+			buf.WriteString(fmt.Sprintf("`<%d>` *%s*\n%s *%s* of *%s* (*%.1f%%*) ↓ *%s*  ↑ *%s* R: *%s*\n\n",
+				torrent.ID, torrentName, torrent.TorrentStatus(), humanize.Bytes(torrent.Have()),
+				humanize.Bytes(torrent.SizeWhenDone), torrent.PercentDone*100, humanize.Bytes(torrent.RateDownload),
+				humanize.Bytes(torrent.RateUpload), torrent.Ratio()))
+		}
+
+		// no need to check if it is empty, as if the buffer is empty telegram won't change the message
+		editConf := tgbotapi.NewEditMessageText(ud.Message.Chat.ID, msgID, buf.String())
+		editConf.ParseMode = tgbotapi.ModeMarkdown
+		Bot.Send(editConf)
+	}
+
 }
 
 // downs will send the names of torrents with status 'Downloading' or in queue to
@@ -496,8 +547,8 @@ func active(ud tgbotapi.Update) {
 	msgID := send(buf.String(), ud.Message.Chat.ID, true)
 
 	// keep the active list live for 'duration * interval'
-	time.Sleep(time.Second * interval)
 	for i := 0; i < duration; i++ {
+		time.Sleep(time.Second * interval)
 		// reset the buffer to reuse it
 		buf.Reset()
 
@@ -511,8 +562,7 @@ func active(ud tgbotapi.Update) {
 		for i := range torrents {
 			if torrents[i].RateDownload > 0 ||
 				torrents[i].RateUpload > 0 {
-				// escape markdown
-				torrentName := mdReplacer.Replace(torrents[i].Name)
+				torrentName := mdReplacer.Replace(torrents[i].Name) // replace markdown chars
 				buf.WriteString(fmt.Sprintf("`<%d>` *%s*\n%s *%s* of *%s* (*%.1f%%*) ↓ *%s*  ↑ *%s* R: *%s*\n\n",
 					torrents[i].ID, torrentName, torrents[i].TorrentStatus(), humanize.Bytes(torrents[i].Have()),
 					humanize.Bytes(torrents[i].SizeWhenDone), torrents[i].PercentDone*100, humanize.Bytes(torrents[i].RateDownload),
@@ -524,7 +574,6 @@ func active(ud tgbotapi.Update) {
 		editConf := tgbotapi.NewEditMessageText(ud.Message.Chat.ID, msgID, buf.String())
 		editConf.ParseMode = tgbotapi.ModeMarkdown
 		Bot.Send(editConf)
-		time.Sleep(time.Second * interval)
 	}
 
 	// replace the speed with dashes to indicate that we are done being live
@@ -859,8 +908,8 @@ func info(ud tgbotapi.Update, tokens []string) {
 		// this go-routine will make the info live for 'duration * interval'
 		// takes trackers so we don't have to regex them over and over.
 		go func(trackers string, torrentID, msgID int) {
-			time.Sleep(time.Second * interval)
 			for i := 0; i < duration; i++ {
+				time.Sleep(time.Second * interval)
 				torrent, err := Client.GetTorrent(torrentID)
 				if err != nil {
 					continue // skip this iteration if there's an error retrieving the torrent's info
@@ -877,7 +926,6 @@ func info(ud tgbotapi.Update, tokens []string) {
 				editConf := tgbotapi.NewEditMessageText(ud.Message.Chat.ID, msgID, info)
 				editConf.ParseMode = tgbotapi.ModeMarkdown
 				Bot.Send(editConf)
-				time.Sleep(time.Second * interval)
 
 			}
 
