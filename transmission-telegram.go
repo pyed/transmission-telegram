@@ -1080,13 +1080,13 @@ func stats(ud tgbotapi.Update) {
 		_Current Stats_
 		Downloaded: *%s*
 		Uploaded: *%s*
-		Running time: *%d seconds*
+		Running time: *%s*
 
 		_Accumulative Stats_
 		Sessions: *%d*
 		Downloaded: *%s*
 		Uploaded: *%s*
-		Total Running time: *%d seconds*
+		Total Running time: *%s*
 		`,
 
 		stats.TorrentCount,
@@ -1094,11 +1094,11 @@ func stats(ud tgbotapi.Update) {
 		stats.PausedTorrentCount,
 		humanize.Bytes(stats.CurrentStats.DownloadedBytes),
 		humanize.Bytes(stats.CurrentStats.UploadedBytes),
-		stats.CurrentStats.SecondsActive,
+		stats.CurrentActiveTime(),
 		stats.CumulativeStats.SessionCount,
 		humanize.Bytes(stats.CumulativeStats.DownloadedBytes),
 		humanize.Bytes(stats.CumulativeStats.UploadedBytes),
-		stats.CumulativeStats.SecondsActive,
+		stats.CumulativeActiveTime(),
 	)
 
 	send(msg, ud.Message.Chat.ID, true)
