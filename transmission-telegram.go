@@ -36,10 +36,10 @@ var (
 	Bot     *tgbotapi.BotAPI
 	Updates <-chan tgbotapi.Update
 
-	// interval in seconds for live updates, affects "active", "info", "speed"
+	// interval in seconds for live updates, affects: "active", "info", "speed", "head", "tail"
 	interval time.Duration = 2
 	// duration controls how many intervals will happen
-	duration = 10
+	duration = 60
 
 	// since telegram's markdown can't be escaped, we have to replace some chars
 	// affects only markdown users: info, active, head, tail
