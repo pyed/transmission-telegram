@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"regexp"
 	"strconv"
@@ -26,6 +27,7 @@ var (
 	RpcUrl   string
 	Username string
 	Password string
+	LogFile  string
 
 	// transmission
 	Client *transmission.TransmissionClient
@@ -56,6 +58,7 @@ func init() {
 	flag.StringVar(&RpcUrl, "url", "http://localhost:9091/transmission/rpc", "Transmission RPC URL")
 	flag.StringVar(&Username, "username", "", "Transmission username")
 	flag.StringVar(&Password, "password", "", "Transmission password")
+	flag.StringVar(&LogFile, "logfile", "", "Send logs to a file")
 
 	// set the usage message
 	flag.Usage = func() {
@@ -74,8 +77,15 @@ func init() {
 	}
 
 	// make sure that the handler doesn't contain @
-	if strings.Contains(Master, "@") {
-		Master = strings.Replace(Master, "@", "", -1)
+	Master = strings.Replace(Master, "@", "", -1)
+
+	// if we got a log file, log to it
+	if LogFile != "" {
+		logf, err := os.OpenFile(LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.SetOutput(logf)
 	}
 }
 
@@ -84,7 +94,7 @@ func init() {
 	var err error
 	Client, err = transmission.New(RpcUrl, Username, Password)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: Make sure you have the right URL, Username and Password\n")
+		log.Print("[ERROR] Transmission: Make sure you have the right URL, Username and Password")
 		os.Exit(1)
 	}
 
@@ -96,10 +106,10 @@ func init() {
 	var err error
 	Bot, err = tgbotapi.NewBotAPI(BotToken)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Telegram Error: %s\n", err)
+		log.Printf("[ERROR] Telegram: %s", err)
 		os.Exit(1)
 	}
-	fmt.Fprintf(os.Stdout, "Authorized on %s", Bot.Self.UserName)
+	log.Printf("[INFO] Authorized: %s", Bot.Self.UserName)
 
 	// get a channel and sign it to 'Updates'
 	u := tgbotapi.NewUpdate(0)
@@ -107,7 +117,7 @@ func init() {
 
 	Updates, err = Bot.GetUpdatesChan(u)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Telegram Error: %s\n", err)
+		log.Printf("[ERROR] Telegram: %s", err)
 		os.Exit(1)
 	}
 }
@@ -121,6 +131,7 @@ func main() {
 
 		// ignore anyone other than 'master'
 		if strings.ToLower(update.Message.From.UserName) != strings.ToLower(Master) {
+			log.Printf("[INFO] Ignored a message from: %s", update.Message.From.String())
 			continue
 		}
 
@@ -130,101 +141,77 @@ func main() {
 
 		switch command {
 		case "list", "/list", "li", "/li":
-			// list torrents
 			go list(update, tokens[1:])
 
 		case "head", "/head", "he", "/he":
-			// list the first 5 or n torrents
 			go head(update, tokens[1:])
 
 		case "tail", "/tail", "ta", "/ta":
-			// list the last 5 or n torrents
 			go tail(update, tokens[1:])
 
 		case "downs", "/downs", "do", "/do":
-			// list downloading
 			go downs(update)
 
 		case "seeding", "/seeding", "sd", "/sd":
-			// list seeding
 			go seeding(update)
 
 		case "paused", "/paused", "pa", "/pa":
-			// list puased torrents
 			go paused(update)
 
 		case "checking", "/checking", "ch", "/ch":
-			// list verifying torrents
 			go checking(update)
 
 		case "active", "/active", "ac", "/ac":
-			// list active torrents
 			go active(update)
 
 		case "errors", "/errors", "er", "/er":
-			// list torrents with errors
 			go errors(update)
 
 		case "sort", "/sort", "so", "/so":
-			// sort torrents
 			go sort(update, tokens[1:])
 
 		case "trackers", "/trackers", "tr", "/tr":
-			// list trackers
 			go trackers(update)
 
 		case "add", "/add", "ad", "/ad":
-			// takes url to a torrent to add it
 			go add(update, tokens[1:])
 
 		case "search", "/search", "se", "/se":
-			// search for a torrent
 			go search(update, tokens[1:])
 
 		case "latest", "/latest", "la", "/la":
-			// get the latest torrents
 			go latest(update, tokens[1:])
 
 		case "info", "/info", "in", "/in":
-			// gets info on specific torrent
 			go info(update, tokens[1:])
 
 		case "stop", "/stop", "sp", "/sp":
-			// stop one torrent or more
 			go stop(update, tokens[1:])
 
 		case "start", "/start", "st", "/st":
-			// starts one torrent or more
 			go start(update, tokens[1:])
 
 		case "check", "/check", "ck", "/ck":
-			// verify a torrent or torrents
 			go check(update, tokens[1:])
 
 		case "stats", "/stats", "sa", "/sa":
-			// print transmission stats
 			go stats(update)
 
 		case "speed", "/speed", "ss", "/ss":
-			// print current download and upload speeds
 			go speed(update)
 
 		case "count", "/count", "co", "/co":
-			// sends current torrents count per status
 			go count(update)
 
 		case "del", "/del":
-			// deletes a torrent but keep its data
 			go del(update, tokens[1:])
 
 		case "deldata", "/deldata":
-			// deletes a torrents and its data
 			go deldata(update, tokens[1:])
 
 		case "help", "/help":
 			// prints a help message
 		case "version", "/version":
-			// print transmission and transmission-telegram versions
 			go version(update)
 
 		case "":
@@ -1252,7 +1239,7 @@ LenCheck:
 
 		// send current chunk
 		if _, err := Bot.Send(msg); err != nil {
-			fmt.Fprintf(os.Stderr, "send error: %s\n", err.Error())
+			log.Printf("[ERROR] Send: %s", err)
 		}
 		// move to the next chunk
 		text = text[stop:]
@@ -1269,7 +1256,7 @@ LenCheck:
 
 	resp, err := Bot.Send(msg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "send error: %s\n", err.Error())
+		log.Printf("[ERROR] Send: %s", err)
 	}
 
 	return resp.MessageID
