@@ -18,9 +18,91 @@ import (
 	"github.com/pyed/transmission"
 )
 
-const VERSION = "0.0"
+const (
+	VERSION = "0.0"
+
+	HELP = `
+	*list* or *li*
+	Lists all the torrents, takes an optional argument which is a query to list only torrents that has a tracker matches the query, or some of it.
+
+	*head* or *he*
+	Lists the first n number of torrents, n defaults to 5 if no argument is provided.
+
+	*tail* or *ta*
+	Lists the last n number of torrents, n defaults to 5 if no argument is provided.
+
+	*down* or *dl*
+	Lists torrents with the status of Downloading or in the queue to download.
+
+	*seeding* or *sd*
+	Lists torrents with the status of Seeding or in the queue to seed.
+	
+	*paused* or *pa*
+	Lists Paused torrents.
+
+	*checking* or *ch*
+	Lists torrents with the status of Verifying or in the queue to verify.
+	
+	*active* or *ac*
+	Lists torrents that are actively uploading or downloading.
+
+	*errors* or *er*
+	Lists torrents with with errors along with the error message.
+
+	*sort* or *so*
+	Manipulate the sorting of the aforementioned commands, Call it without arguments for more. 
+
+	*trackers* or *tr*
+	Lists all the trackers along with the number of torrents.
+
+	*add* or *ad*
+	Takes one or many URLs or magnets to add them, You can send a .torrent file via Telegram to add it.
+
+	*search* or *se*
+	Takes a query and lists torrents with matching names.
+
+	*latest* or *la*
+	Lists the newest n torrents, n defaults to 5 if no argument is provided.
+
+	*info* or *in*
+	Takes one or more torrent's IDs to list more info about them.
+
+	*stop* or *sp*
+	Takes one or more torrent's IDs to stop them.
+
+	*start* or *st*
+	Takes one or more torrent's IDs to start them.
+
+	*check* or *ck*
+	Takes one or more torrent's IDs to verify them.
+
+	*del*
+	Takes one or more torrent's IDs to delete them.
+
+	*deldata*
+	Takes one or more torrent's IDs to delete them and their data.
+
+	*stats* or *sa*
+	Shows Transmission's stats.
+	
+	*speed* or *ss*
+	Shows the upload and download speeds.
+	
+	*count* or *co*
+	Shows the torrents counts per status.
+
+	*help*
+	Shows this help message.
+
+	*version*
+	Shows version numbers.
+
+	- Prefix commands with '/' if you want to talk to your bot in a group. 
+	`
+)
 
 var (
+
 	// flags
 	BotToken string
 	Master   string
@@ -149,7 +231,7 @@ func main() {
 		case "tail", "/tail", "ta", "/ta":
 			go tail(update, tokens[1:])
 
-		case "downs", "/downs", "do", "/do":
+		case "downs", "/downs", "dl", "/dl":
 			go downs(update)
 
 		case "seeding", "/seeding", "sd", "/sd":
@@ -210,7 +292,8 @@ func main() {
 			go deldata(update, tokens[1:])
 
 		case "help", "/help":
-			// prints a help message
+			go send(HELP, update.Message.Chat.ID, true)
+
 		case "version", "/version":
 			go version(update)
 
