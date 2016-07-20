@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	VERSION = "0.0"
+	VERSION = "1.0"
 
 	HELP = `
 	*list* or *li*
@@ -176,7 +176,7 @@ func init() {
 	var err error
 	Client, err = transmission.New(RpcUrl, Username, Password)
 	if err != nil {
-		log.Print("[ERROR] Transmission: Make sure you have the right URL, Username and Password")
+		fmt.Fprintf(os.Stderr, "[ERROR] Transmission: Make sure you have the right URL, Username and Password")
 		os.Exit(1)
 	}
 
@@ -188,18 +188,17 @@ func init() {
 	var err error
 	Bot, err = tgbotapi.NewBotAPI(BotToken)
 	if err != nil {
-		log.Printf("[ERROR] Telegram: %s", err)
+		fmt.Fprintf(os.Stderr, "[ERROR] Telegram: %s", err)
 		os.Exit(1)
 	}
 	log.Printf("[INFO] Authorized: %s", Bot.Self.UserName)
 
-	// get a channel and sign it to 'Updates'
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 
 	Updates, err = Bot.GetUpdatesChan(u)
 	if err != nil {
-		log.Printf("[ERROR] Telegram: %s", err)
+		fmt.Fprintf(os.Stderr, "[ERROR] Telegram: %s", err)
 		os.Exit(1)
 	}
 }
@@ -310,6 +309,8 @@ func main() {
 }
 
 // list will form and send a list of all the torrents
+// takes an optional argument which is a query to match against trackers
+// to list only torrents that has a tracker that matchs.
 func list(ud tgbotapi.Update, tokens []string) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
@@ -848,7 +849,9 @@ func receiveTorrent(ud tgbotapi.Update) {
 	}
 
 	// get the file ID and make the config
-	fconfig := tgbotapi.FileConfig{ud.Message.Document.FileID}
+	fconfig := tgbotapi.FileConfig{
+		FileID: ud.Message.Document.FileID,
+	}
 	file, err := Bot.GetFile(fconfig)
 	if err != nil {
 		send("receiver: "+err.Error(), ud.Message.Chat.ID, false)
@@ -1291,8 +1294,6 @@ func deldata(ud tgbotapi.Update, tokens []string) {
 		send("Deleted with data: "+name, ud.Message.Chat.ID, false)
 	}
 }
-
-// help
 
 // version sends transmission version + transmission-telegram version
 func version(ud tgbotapi.Update) {
