@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	VERSION = "1.0"
+	VERSION = "1.1"
 
 	HELP = `
 	*list* or *li*
@@ -68,13 +68,13 @@ const (
 	Takes one or more torrent's IDs to list more info about them.
 
 	*stop* or *sp*
-	Takes one or more torrent's IDs to stop them.
+	Takes one or more torrent's IDs to stop them, or _all_ to stop all torrents.
 
 	*start* or *st*
-	Takes one or more torrent's IDs to start them.
+	Takes one or more torrent's IDs to start them, or _all_ to start all torrents.
 
 	*check* or *ck*
-	Takes one or more torrent's IDs to verify them.
+	Takes one or more torrent's IDs to verify them, or _all_ to verify all torrents.
 
 	*del*
 	Takes one or more torrent's IDs to delete them.
@@ -98,6 +98,7 @@ const (
 	Shows version numbers.
 
 	- Prefix commands with '/' if you want to talk to your bot in a group. 
+	- report any issues [here](https://github.com/pyed/transmission-telegram)
 	`
 )
 
@@ -106,7 +107,7 @@ var (
 	// flags
 	BotToken string
 	Master   string
-	RpcUrl   string
+	RPCURL   string
 	Username string
 	Password string
 	LogFile  string
@@ -137,7 +138,7 @@ func init() {
 	// define arguments and parse them.
 	flag.StringVar(&BotToken, "token", "", "Telegram bot token")
 	flag.StringVar(&Master, "master", "", "Your telegram handler, So the bot will only respond to you")
-	flag.StringVar(&RpcUrl, "url", "http://localhost:9091/transmission/rpc", "Transmission RPC URL")
+	flag.StringVar(&RPCURL, "url", "http://localhost:9091/transmission/rpc", "Transmission RPC URL")
 	flag.StringVar(&Username, "username", "", "Transmission username")
 	flag.StringVar(&Password, "password", "", "Transmission password")
 	flag.StringVar(&LogFile, "logfile", "", "Send logs to a file")
@@ -169,12 +170,23 @@ func init() {
 		}
 		log.SetOutput(logf)
 	}
+
+	// if the `-username` flag isn't set, look into the environment variable 'TR_AUTH'
+	if Username == "" {
+		if values := strings.Split(os.Getenv("TR_AUTH"), ":"); len(values) > 1 {
+			Username, Password = values[0], values[1]
+		}
+	}
+
+	// log the flags
+	log.Printf("[INFO] Token=%s\nMaster=%s\nURL=%s\nUSER=%s\nPASS=%s",
+		BotToken, Master, RPCURL, Username, Password)
 }
 
 // init transmission
 func init() {
 	var err error
-	Client, err = transmission.New(RpcUrl, Username, Password)
+	Client, err = transmission.New(RPCURL, Username, Password)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[ERROR] Transmission: Make sure you have the right URL, Username and Password")
 		os.Exit(1)
