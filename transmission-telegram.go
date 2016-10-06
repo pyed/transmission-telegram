@@ -102,11 +102,13 @@ const (
 	`
 )
 
+type stringslice []string
+
 var (
 
 	// flags
 	BotToken string
-	Master   string
+	Masters   stringslice
 	RPCURL   string
 	Username string
 	Password string
@@ -133,11 +135,20 @@ var (
 		"`", "'")
 )
 
+func (i *stringslice) String() string {
+    return fmt.Sprintf("%s", *i)
+}
+ 
+func (i *stringslice) Set(value string) error {
+    *i = append(*i, value)
+    return nil
+}
+
 // init flags
 func init() {
 	// define arguments and parse them.
 	flag.StringVar(&BotToken, "token", "", "Telegram bot token")
-	flag.StringVar(&Master, "master", "", "Your telegram handler, So the bot will only respond to you")
+	flag.Var(&Masters, "master", "Your telegram handler, So the bot will only respond to you. Can specify more than one")
 	flag.StringVar(&RPCURL, "url", "http://localhost:9091/transmission/rpc", "Transmission RPC URL")
 	flag.StringVar(&Username, "username", "", "Transmission username")
 	flag.StringVar(&Password, "password", "", "Transmission password")
@@ -145,7 +156,7 @@ func init() {
 
 	// set the usage message
 	flag.Usage = func() {
-		fmt.Fprint(os.Stderr, "Usage: transmission-bot -token=<TOKEN> -master=<@tuser> -url=[http://] -username=[user] -password=[pass]\n\n")
+		fmt.Fprint(os.Stderr, "Usage: transmission-bot -token=<TOKEN> -master=<@tuser> -master=<@yuser2> -url=[http://] -username=[user] -password=[pass]\n\n")
 		flag.PrintDefaults()
 	}
 
@@ -153,14 +164,17 @@ func init() {
 
 	// make sure that we have the two madatory arguments: telegram token & master's handler.
 	if BotToken == "" ||
-		Master == "" {
+		len(Masters) < 1 {
 		fmt.Fprintf(os.Stderr, "Error: Mandatory argument missing! (-token or -master)\n\n")
 		flag.Usage()
 		os.Exit(1)
 	}
 
 	// make sure that the handler doesn't contain @
-	Master = strings.Replace(Master, "@", "", -1)
+    for i := range Masters {
+        Masters[i] = strings.Replace(Masters[i], "@", "", -1)
+    }
+    
 
 	// if we got a log file, log to it
 	if LogFile != "" {
@@ -179,8 +193,8 @@ func init() {
 	}
 
 	// log the flags
-	log.Printf("[INFO] Token=%s\nMaster=%s\nURL=%s\nUSER=%s\nPASS=%s",
-		BotToken, Master, RPCURL, Username, Password)
+	log.Printf("[INFO] Token=%s\nMasters=%s\nURL=%s\nUSER=%s\nPASS=%s",
+		BotToken, Masters, RPCURL, Username, Password)
 }
 
 // init transmission
@@ -223,7 +237,7 @@ func main() {
 		}
 
 		// ignore anyone other than 'master'
-		if strings.ToLower(update.Message.From.UserName) != strings.ToLower(Master) {
+		if !inMasters(update.Message.From.UserName) {
 			log.Printf("[INFO] Ignored a message from: %s", update.Message.From.String())
 			continue
 		}
@@ -1356,4 +1370,16 @@ LenCheck:
 	}
 
 	return resp.MessageID
+}
+
+func inMasters(text string) bool{
+    lowerCase := strings.ToLower(text)
+    ret := false
+    for i := range Masters {
+		if strings.ToLower(Masters[i]) == lowerCase {
+			ret = true
+			break
+		}
+    }
+    return ret
 }
