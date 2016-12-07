@@ -108,7 +108,7 @@ var (
 
 	// flags
 	BotToken string
-	Masters   stringslice
+	Masters  stringslice
 	RPCURL   string
 	Username string
 	Password string
@@ -136,12 +136,12 @@ var (
 )
 
 func (i *stringslice) String() string {
-    return fmt.Sprintf("%s", *i)
+	return fmt.Sprintf("%s", *i)
 }
- 
+
 func (i *stringslice) Set(value string) error {
-    *i = append(*i, value)
-    return nil
+	*i = append(*i, value)
+	return nil
 }
 
 // init flags
@@ -156,7 +156,7 @@ func init() {
 
 	// set the usage message
 	flag.Usage = func() {
-		fmt.Fprint(os.Stderr, "Usage: transmission-bot -token=<TOKEN> -master=<@tuser> -master=<@yuser2> -url=[http://] -username=[user] -password=[pass]\n\n")
+		fmt.Fprint(os.Stderr, "Usage: transmission-bot <-token=TOKEN> <-master=@tuser> [-master=@yuser2] [-url=http://] [-username=user] [-password=pass]\n\n")
 		flag.PrintDefaults()
 	}
 
@@ -171,10 +171,9 @@ func init() {
 	}
 
 	// make sure that the handler doesn't contain @
-    for i := range Masters {
-        Masters[i] = strings.Replace(Masters[i], "@", "", -1)
-    }
-    
+	for i := range Masters {
+		Masters[i] = strings.Replace(Masters[i], "@", "", -1)
+	}
 
 	// if we got a log file, log to it
 	if LogFile != "" {
@@ -430,12 +429,21 @@ func head(ud tgbotapi.Update, tokens []string) {
 			continue // try again if some error heppened
 		}
 
-		for i := range torrents[:n] {
-			torrentName := mdReplacer.Replace(torrents[i].Name) // escape markdown
+		if len(torrents) < 1 {
+			continue
+		}
+
+		// make sure that we stay in the boundaries
+		if n <= 0 || n > len(torrents) {
+			n = len(torrents)
+		}
+
+		for _, torrent := range torrents[:n] {
+			torrentName := mdReplacer.Replace(torrent.Name) // escape markdown
 			buf.WriteString(fmt.Sprintf("`<%d>` *%s*\n%s *%s* of *%s* (*%.1f%%*) ↓ *%s*  ↑ *%s* R: *%s*\n\n",
-				torrents[i].ID, torrentName, torrents[i].TorrentStatus(), humanize.Bytes(torrents[i].Have()),
-				humanize.Bytes(torrents[i].SizeWhenDone), torrents[i].PercentDone*100, humanize.Bytes(torrents[i].RateDownload),
-				humanize.Bytes(torrents[i].RateUpload), torrents[i].Ratio()))
+				torrent.ID, torrentName, torrent.TorrentStatus(), humanize.Bytes(torrent.Have()),
+				humanize.Bytes(torrent.SizeWhenDone), torrent.PercentDone*100, humanize.Bytes(torrent.RateDownload),
+				humanize.Bytes(torrent.RateUpload), torrent.Ratio()))
 		}
 
 		// no need to check if it is empty, as if the buffer is empty telegram won't change the message
@@ -496,6 +504,15 @@ func tail(ud tgbotapi.Update, tokens []string) {
 		torrents, err := Client.GetTorrents()
 		if err != nil {
 			continue // try again if some error heppened
+		}
+
+		if len(torrents) < 1 {
+			continue
+		}
+
+		// make sure that we stay in the boundaries
+		if n <= 0 || n > len(torrents) {
+			n = len(torrents)
 		}
 
 		for _, torrent := range torrents[len(torrents)-n:] {
@@ -1372,14 +1389,14 @@ LenCheck:
 	return resp.MessageID
 }
 
-func inMasters(text string) bool{
-    lowerCase := strings.ToLower(text)
-    ret := false
-    for i := range Masters {
+func inMasters(text string) bool {
+	lowerCase := strings.ToLower(text)
+	ret := false
+	for i := range Masters {
 		if strings.ToLower(Masters[i]) == lowerCase {
 			ret = true
 			break
 		}
-    }
-    return ret
+	}
+	return ret
 }
