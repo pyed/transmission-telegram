@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	VERSION = "1.1"
+	VERSION = "1.2"
 
 	HELP = `
 	*list* or *li*
@@ -887,7 +887,7 @@ func add(ud tgbotapi.Update, tokens []string) {
 
 // receiveTorrent gets an update that potentially has a .torrent file to add
 func receiveTorrent(ud tgbotapi.Update) {
-	if ud.Message.Document.FileID == "" {
+	if ud.Message.Document == nil {
 		return // has no document
 	}
 
