@@ -12,10 +12,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"gopkg.in/telegram-bot-api.v4"
-
 	"github.com/dustin/go-humanize"
+	"github.com/hpcloud/tail"
 	"github.com/pyed/transmission"
+	"gopkg.in/telegram-bot-api.v4"
 )
 
 const (
@@ -107,12 +107,13 @@ type stringslice []string
 var (
 
 	// flags
-	BotToken string
-	Masters  stringslice
-	RPCURL   string
-	Username string
-	Password string
-	LogFile  string
+	BotToken     string
+	Masters      stringslice
+	RPCURL       string
+	Username     string
+	Password     string
+	LogFile      string
+	TransLogFile string // Transmission log file
 
 	// transmission
 	Client *transmission.TransmissionClient
@@ -120,6 +121,9 @@ var (
 	// telegram
 	Bot     *tgbotapi.BotAPI
 	Updates <-chan tgbotapi.Update
+
+	// chat id
+	chatID int64
 
 	// interval in seconds for live updates, affects: "active", "info", "speed", "head", "tail"
 	interval time.Duration = 2
@@ -153,6 +157,7 @@ func init() {
 	flag.StringVar(&Username, "username", "", "Transmission username")
 	flag.StringVar(&Password, "password", "", "Transmission password")
 	flag.StringVar(&LogFile, "logfile", "", "Send logs to a file")
+	flag.StringVar(&TransLogFile, "transmission-logfile", "", "Open transmission logfile to monitor torrents completion")
 
 	// set the usage message
 	flag.Usage = func() {
@@ -182,6 +187,39 @@ func init() {
 			log.Fatal(err)
 		}
 		log.SetOutput(logf)
+	}
+
+	// if we got a transmission log file, monitor it for torrents completion to notify upon them.
+	if TransLogFile != "" {
+		go func() {
+			ft, err := tail.TailFile(TransLogFile, tail.Config{
+				Location:  &tail.SeekInfo{0, 2}, // ignore previous log lines
+				Follow:    true,                 // tail -f
+				MustExist: true,                 // if you can't find the file, don't wait for it to be created.
+			})
+			if err != nil {
+				log.Printf("[ERROR] tailing transmission log: %s", err)
+				return
+			}
+
+			re := regexp.MustCompile(`"Incomplete" to "Complete"`)
+
+			// [2017-02-22 21:00:00.898] File-Name State changed from "Incomplete" to "Complete" (torrent.c:2218)
+			const start = len(`[2017-02-22 21:00:00.898] `)
+			const end = len(` State changed from "Incomplete" to "Complete" (torrent.c:2218)`)
+
+			for line := range ft.Lines {
+				// if we don't have a chatID continue
+				if chatID == 0 {
+					continue
+				}
+
+				if re.MatchString(line.Text) {
+					msg := fmt.Sprintf("Completed: %s", line.Text[start:len(line.Text)-end])
+					send(msg, chatID, false)
+				}
+			}
+		}()
 	}
 
 	// if the `-username` flag isn't set, look into the environment variable 'TR_AUTH'
@@ -241,6 +279,11 @@ func main() {
 			continue
 		}
 
+		// update chatID for complete notification
+		if TransLogFile != "" && chatID != update.Message.Chat.ID {
+			chatID = update.Message.Chat.ID
+		}
+
 		// tokenize the update
 		tokens := strings.Split(update.Message.Text, " ")
 		command := strings.ToLower(tokens[0])
@@ -253,7 +296,7 @@ func main() {
 			go head(update, tokens[1:])
 
 		case "tail", "/tail", "ta", "/ta":
-			go tail(update, tokens[1:])
+			go tailf(update, tokens[1:])
 
 		case "downs", "/downs", "dl", "/dl":
 			go downs(update)
@@ -454,8 +497,8 @@ func head(ud tgbotapi.Update, tokens []string) {
 
 }
 
-// tail lists the last 5 or n torrents
-func tail(ud tgbotapi.Update, tokens []string) {
+// tailf lists the last 5 or n torrents
+func tailf(ud tgbotapi.Update, tokens []string) {
 	var (
 		n   = 5 // default to 5
 		err error
