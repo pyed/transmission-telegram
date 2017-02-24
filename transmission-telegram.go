@@ -122,8 +122,11 @@ var (
 	Bot     *tgbotapi.BotAPI
 	Updates <-chan tgbotapi.Update
 
-	// chat id
+	// chatID will be used to keep track of which chat to send completion notifictions.
 	chatID int64
+
+	// logging
+	logger = log.New(os.Stdout, "", log.LstdFlags)
 
 	// interval in seconds for live updates, affects: "active", "info", "speed", "head", "tail"
 	interval time.Duration = 2
@@ -186,7 +189,7 @@ func init() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		log.SetOutput(logf)
+		logger.SetOutput(logf)
 	}
 
 	// if we got a transmission log file, monitor it for torrents completion to notify upon them.
@@ -194,11 +197,12 @@ func init() {
 		go func() {
 			ft, err := tail.TailFile(TransLogFile, tail.Config{
 				Location:  &tail.SeekInfo{0, 2}, // ignore previous log lines
-				Follow:    true,                 // tail -f
-				MustExist: true,                 // if you can't find the file, don't wait for it to be created.
+				Follow:    true,                 // as the -f in tail -f
+				MustExist: true,                 // if you can't find the file, don't wait for it to be created
+				Logger:    logger,               // log to our logger
 			})
 			if err != nil {
-				log.Printf("[ERROR] tailing transmission log: %s", err)
+				logger.Printf("[ERROR] tailing transmission log: %s", err)
 				return
 			}
 
@@ -209,12 +213,12 @@ func init() {
 			const end = len(` State changed from "Incomplete" to "Complete" (torrent.c:2218)`)
 
 			for line := range ft.Lines {
-				// if we don't have a chatID continue
-				if chatID == 0 {
-					continue
-				}
-
 				if re.MatchString(line.Text) {
+					// if we don't have a chatID continue
+					if chatID == 0 {
+						continue
+					}
+
 					msg := fmt.Sprintf("Completed: %s", line.Text[start:len(line.Text)-end])
 					send(msg, chatID, false)
 				}
@@ -230,7 +234,7 @@ func init() {
 	}
 
 	// log the flags
-	log.Printf("[INFO] Token=%s\nMasters=%s\nURL=%s\nUSER=%s\nPASS=%s",
+	logger.Printf("[INFO] Token=%s\nMasters=%s\nURL=%s\nUSER=%s\nPASS=%s",
 		BotToken, Masters, RPCURL, Username, Password)
 }
 
@@ -254,7 +258,7 @@ func init() {
 		fmt.Fprintf(os.Stderr, "[ERROR] Telegram: %s", err)
 		os.Exit(1)
 	}
-	log.Printf("[INFO] Authorized: %s", Bot.Self.UserName)
+	logger.Printf("[INFO] Authorized: %s", Bot.Self.UserName)
 
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
@@ -275,7 +279,7 @@ func main() {
 
 		// ignore anyone other than 'master'
 		if !inMasters(update.Message.From.UserName) {
-			log.Printf("[INFO] Ignored a message from: %s", update.Message.From.String())
+			logger.Printf("[INFO] Ignored a message from: %s", update.Message.From.String())
 			continue
 		}
 
@@ -1409,7 +1413,7 @@ LenCheck:
 
 		// send current chunk
 		if _, err := Bot.Send(msg); err != nil {
-			log.Printf("[ERROR] Send: %s", err)
+			logger.Printf("[ERROR] Send: %s", err)
 		}
 		// move to the next chunk
 		text = text[stop:]
@@ -1426,7 +1430,7 @@ LenCheck:
 
 	resp, err := Bot.Send(msg)
 	if err != nil {
-		log.Printf("[ERROR] Send: %s", err)
+		logger.Printf("[ERROR] Send: %s", err)
 	}
 
 	return resp.MessageID
