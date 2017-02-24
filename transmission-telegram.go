@@ -102,13 +102,11 @@ const (
 	`
 )
 
-type stringslice []string
-
 var (
 
 	// flags
 	BotToken     string
-	Masters      stringslice
+	Masters      masterSlice
 	RPCURL       string
 	Username     string
 	Password     string
@@ -142,13 +140,29 @@ var (
 		"`", "'")
 )
 
-func (i *stringslice) String() string {
-	return fmt.Sprintf("%s", *i)
+// we need a type for masters for the flag package to parse them as a slice
+type masterSlice []string
+
+// String is mandatory functions for the flag package
+func (masters *masterSlice) String() string {
+	return fmt.Sprintf("%s", *masters)
 }
 
-func (i *stringslice) Set(value string) error {
-	*i = append(*i, value)
+// Set is mandatory functions for the flag package
+func (masters *masterSlice) Set(master string) error {
+	*masters = append(*masters, strings.ToLower(master))
 	return nil
+}
+
+// Contains takes a string and return true of masterSlice has it
+func (masters masterSlice) Contains(master string) bool {
+	master = strings.ToLower(master)
+	for i := range masters {
+		if masters[i] == master {
+			return true
+		}
+	}
+	return false
 }
 
 // init flags
@@ -234,7 +248,7 @@ func init() {
 	}
 
 	// log the flags
-	logger.Printf("[INFO] Token=%s\nMasters=%s\nURL=%s\nUSER=%s\nPASS=%s",
+	logger.Printf("[INFO] Token=%s\n\t\tMasters=%s\n\t\tURL=%s\n\t\tUSER=%s\n\t\tPASS=%s",
 		BotToken, Masters, RPCURL, Username, Password)
 }
 
@@ -277,8 +291,8 @@ func main() {
 			continue
 		}
 
-		// ignore anyone other than 'master'
-		if !inMasters(update.Message.From.UserName) {
+		// ignore non masters
+		if !Masters.Contains(update.Message.From.UserName) {
 			logger.Printf("[INFO] Ignored a message from: %s", update.Message.From.String())
 			continue
 		}
@@ -1434,16 +1448,4 @@ LenCheck:
 	}
 
 	return resp.MessageID
-}
-
-func inMasters(text string) bool {
-	lowerCase := strings.ToLower(text)
-	ret := false
-	for i := range Masters {
-		if strings.ToLower(Masters[i]) == lowerCase {
-			ret = true
-			break
-		}
-	}
-	return ret
 }
