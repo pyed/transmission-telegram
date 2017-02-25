@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	VERSION = "1.2"
+	VERSION = "1.3"
 
 	HELP = `
 	*list* or *li*
@@ -380,7 +380,7 @@ func main() {
 			go send(HELP, update.Message.Chat.ID, true)
 
 		case "version", "/version":
-			go version(update)
+			go getVersion(update)
 
 		case "":
 			// might be a file received
@@ -1399,8 +1399,8 @@ func deldata(ud tgbotapi.Update, tokens []string) {
 	}
 }
 
-// version sends transmission version + transmission-telegram version
-func version(ud tgbotapi.Update) {
+// getVersion sends transmission version + transmission-telegram version
+func getVersion(ud tgbotapi.Update) {
 	send(fmt.Sprintf("Transmission *%s*\nTransmission-telegram *%s*", Client.Version(), VERSION), ud.Message.Chat.ID, true)
 }
 
