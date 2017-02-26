@@ -1,0 +1,12 @@
+[submodule "vendor/github.com/dustin/go-humanize"]
+	path = vendor/github.com/dustin/go-humanize
+	url = https://github.com/dustin/go-humanize
+[submodule "vendor/github.com/hpcloud/tail"]
+	path = vendor/github.com/hpcloud/tail
+	url = https://github.com/hpcloud/tail
+[submodule "vendor/github.com/pyed/transmission"]
+	path = vendor/github.com/pyed/transmission
+	url = https://github.com/pyed/transmission
+[submodule "vendor/gopkg.in/telegram-bot-api.v4"]
+	path = vendor/gopkg.in/telegram-bot-api.v4
+	url = https://gopkg.in/telegram-bot-api.v4
