@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	VERSION = "1.3"
+	VERSION = "v1.4"
 
 	HELP = `
 	*list* or *li*
@@ -220,14 +220,15 @@ func init() {
 				return
 			}
 
-			re := regexp.MustCompile(`"Incomplete" to "Complete"`)
-
 			// [2017-02-22 21:00:00.898] File-Name State changed from "Incomplete" to "Complete" (torrent.c:2218)
-			const start = len(`[2017-02-22 21:00:00.898] `)
-			const end = len(` State changed from "Incomplete" to "Complete" (torrent.c:2218)`)
+			const (
+				substring = `"Incomplete" to "Complete"`
+				start     = len(`[2017-02-22 21:00:00.898] `)
+				end       = len(` State changed from "Incomplete" to "Complete" (torrent.c:2218)`)
+			)
 
 			for line := range ft.Lines {
-				if re.MatchString(line.Text) {
+				if strings.Contains(line.Text, substring) {
 					// if we don't have a chatID continue
 					if chatID == 0 {
 						continue
