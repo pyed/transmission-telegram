@@ -486,7 +486,7 @@ func head(ud tgbotapi.Update, tokens []string) {
 		time.Sleep(time.Second * interval)
 		buf.Reset()
 
-		torrents, err := Client.GetTorrents()
+		torrents, err = Client.GetTorrents()
 		if err != nil {
 			continue // try again if some error heppened
 		}
@@ -563,7 +563,7 @@ func tailf(ud tgbotapi.Update, tokens []string) {
 		time.Sleep(time.Second * interval)
 		buf.Reset()
 
-		torrents, err := Client.GetTorrents()
+		torrents, err = Client.GetTorrents()
 		if err != nil {
 			continue // try again if some error heppened
 		}
@@ -1084,11 +1084,10 @@ func info(ud tgbotapi.Update, tokens []string) {
 		msgID := send(info, ud.Message.Chat.ID, true)
 
 		// this go-routine will make the info live for 'duration * interval'
-		// takes trackers so we don't have to regex them over and over.
-		go func(trackers string, torrentID, msgID int) {
+		go func(torrentID, msgID int) {
 			for i := 0; i < duration; i++ {
 				time.Sleep(time.Second * interval)
-				torrent, err := Client.GetTorrent(torrentID)
+				torrent, err = Client.GetTorrent(torrentID)
 				if err != nil {
 					continue // skip this iteration if there's an error retrieving the torrent's info
 				}
@@ -1117,7 +1116,7 @@ func info(ud tgbotapi.Update, tokens []string) {
 			editConf := tgbotapi.NewEditMessageText(ud.Message.Chat.ID, msgID, info)
 			editConf.ParseMode = tgbotapi.ModeMarkdown
 			Bot.Send(editConf)
-		}(trackers, torrentID, msgID)
+		}(torrentID, msgID)
 	}
 }
 
