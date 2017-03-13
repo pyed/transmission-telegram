@@ -112,6 +112,7 @@ var (
 	Password     string
 	LogFile      string
 	TransLogFile string // Transmission log file
+	NoLive       bool
 
 	// transmission
 	Client *transmission.TransmissionClient
@@ -175,6 +176,7 @@ func init() {
 	flag.StringVar(&Password, "password", "", "Transmission password")
 	flag.StringVar(&LogFile, "logfile", "", "Send logs to a file")
 	flag.StringVar(&TransLogFile, "transmission-logfile", "", "Open transmission logfile to monitor torrents completion")
+	flag.BoolVar(&NoLive, "no-live", false, "Don't edit and update info after sending")
 
 	// set the usage message
 	flag.Usage = func() {
@@ -481,6 +483,10 @@ func head(ud tgbotapi.Update, tokens []string) {
 
 	msgID := send(buf.String(), ud.Message.Chat.ID, true)
 
+	if NoLive {
+		return
+	}
+
 	// keep the info live
 	for i := 0; i < duration; i++ {
 		time.Sleep(time.Second * interval)
@@ -557,6 +563,10 @@ func tailf(ud tgbotapi.Update, tokens []string) {
 	}
 
 	msgID := send(buf.String(), ud.Message.Chat.ID, true)
+
+	if NoLive {
+		return
+	}
 
 	// keep the info live
 	for i := 0; i < duration; i++ {
@@ -721,6 +731,10 @@ func active(ud tgbotapi.Update) {
 	}
 
 	msgID := send(buf.String(), ud.Message.Chat.ID, true)
+
+	if NoLive {
+		return
+	}
 
 	// keep the active list live for 'duration * interval'
 	for i := 0; i < duration; i++ {
@@ -1085,6 +1099,10 @@ func info(ud tgbotapi.Update, tokens []string) {
 		// send it
 		msgID := send(info, ud.Message.Chat.ID, true)
 
+		if NoLive {
+			return
+		}
+
 		// this go-routine will make the info live for 'duration * interval'
 		go func(torrentID, msgID int) {
 			for i := 0; i < duration; i++ {
@@ -1287,31 +1305,37 @@ func stats(ud tgbotapi.Update) {
 
 // speed will echo back the current download and upload speeds
 func speed(ud tgbotapi.Update) {
-	// keep track of the returned message ID from 'send()' to edit the message.
-	var msgID int
+	stats, err := Client.GetStats()
+	if err != nil {
+		send("speed: "+err.Error(), ud.Message.Chat.ID, false)
+		return
+	}
+
+	msg := fmt.Sprintf("↓ %s  ↑ %s", humanize.Bytes(stats.DownloadSpeed), humanize.Bytes(stats.UploadSpeed))
+
+	msgID := send(msg, ud.Message.Chat.ID, false)
+
+	if NoLive {
+		return
+	}
+
 	for i := 0; i < duration; i++ {
-		stats, err := Client.GetStats()
+		time.Sleep(time.Second * interval)
+		stats, err = Client.GetStats()
 		if err != nil {
-			send("speed: "+err.Error(), ud.Message.Chat.ID, false)
-			return
-		}
-
-		msg := fmt.Sprintf("↓ %s  ↑ %s", humanize.Bytes(stats.DownloadSpeed), humanize.Bytes(stats.UploadSpeed))
-
-		// if we haven't send a message, send it and save the message ID to edit it the next iteration
-		if msgID == 0 {
-			msgID = send(msg, ud.Message.Chat.ID, false)
-			time.Sleep(time.Second * interval)
 			continue
 		}
 
-		// we have sent the message, let's update.
+		msg = fmt.Sprintf("↓ %s  ↑ %s", humanize.Bytes(stats.DownloadSpeed), humanize.Bytes(stats.UploadSpeed))
+
 		editConf := tgbotapi.NewEditMessageText(ud.Message.Chat.ID, msgID, msg)
 		Bot.Send(editConf)
 		time.Sleep(time.Second * interval)
 	}
+	// sleep one more time before switching to dashes
+	time.Sleep(time.Second * interval)
 
-	// after the 10th iteration, show dashes to indicate that we are done updating.
+	// show dashes to indicate that we are done updating.
 	editConf := tgbotapi.NewEditMessageText(ud.Message.Chat.ID, msgID, "↓ - B  ↑ - B")
 	Bot.Send(editConf)
 }
