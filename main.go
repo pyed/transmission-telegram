@@ -751,6 +751,8 @@ func active(ud tgbotapi.Update) {
 		editConf.ParseMode = tgbotapi.ModeMarkdown
 		Bot.Send(editConf)
 	}
+	// sleep one more time before putting the dashes
+	time.Sleep(time.Second * interval)
 
 	// replace the speed with dashes to indicate that we are done being live
 	buf.Reset()
@@ -1105,6 +1107,8 @@ func info(ud tgbotapi.Update, tokens []string) {
 				Bot.Send(editConf)
 
 			}
+			// sleep one more time before the dashes
+			time.Sleep(time.Second * interval)
 
 			// at the end write dashes to indicate that we are done being live.
 			torrentName := mdReplacer.Replace(torrent.Name)
