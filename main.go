@@ -127,9 +127,9 @@ var (
 	logger = log.New(os.Stdout, "", log.LstdFlags)
 
 	// interval in seconds for live updates, affects: "active", "info", "speed", "head", "tail"
-	interval time.Duration = 2
+	interval time.Duration = 5
 	// duration controls how many intervals will happen
-	duration = 60
+	duration = 10
 
 	// since telegram's markdown can't be escaped, we have to replace some chars
 	// affects only markdown users: info, active, head, tail
