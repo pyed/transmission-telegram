@@ -13,7 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/dustin/go-humanize"
-	"github.com/hpcloud/tail"
+	"github.com/pyed/tailer"
 	"github.com/pyed/transmission"
 	"gopkg.in/telegram-bot-api.v4"
 )
@@ -211,16 +211,7 @@ func init() {
 	// if we got a transmission log file, monitor it for torrents completion to notify upon them.
 	if TransLogFile != "" {
 		go func() {
-			ft, err := tail.TailFile(TransLogFile, tail.Config{
-				Location:  &tail.SeekInfo{0, 2}, // ignore previous log lines
-				Follow:    true,                 // as the -f in tail -f
-				MustExist: true,                 // if you can't find the file, don't wait for it to be created
-				Logger:    logger,               // log to our logger
-			})
-			if err != nil {
-				logger.Printf("[ERROR] tailing transmission log: %s", err)
-				return
-			}
+			ft := tailer.RunFileTailer(TransLogFile, false, nil)
 
 			// [2017-02-22 21:00:00.898] File-Name State changed from "Incomplete" to "Complete" (torrent.c:2218)
 			const (
@@ -229,16 +220,23 @@ func init() {
 				end       = len(` State changed from "Incomplete" to "Complete" (torrent.c:2218)`)
 			)
 
-			for line := range ft.Lines {
-				if strings.Contains(line.Text, substring) {
-					// if we don't have a chatID continue
-					if chatID == 0 {
-						continue
-					}
+			for {
+				select {
+				case line := <-ft.Lines():
+					if strings.Contains(line, substring) {
+						// if we don't have a chatID continue
+						if chatID == 0 {
+							continue
+						}
 
-					msg := fmt.Sprintf("Completed: %s", line.Text[start:len(line.Text)-end])
-					send(msg, chatID, false)
+						msg := fmt.Sprintf("Completed: %s", line[start:len(line)-end])
+						send(msg, chatID, false)
+					}
+				case err := <-ft.Errors():
+					logger.Printf("[ERROR] tailing transmission log: %s", err)
+					return
 				}
+
 			}
 		}()
 	}
@@ -317,7 +315,7 @@ func main() {
 			go head(update, tokens[1:])
 
 		case "tail", "/tail", "ta", "/ta":
-			go tailf(update, tokens[1:])
+			go tail(update, tokens[1:])
 
 		case "downs", "/downs", "dl", "/dl":
 			go downs(update)
@@ -522,8 +520,8 @@ func head(ud tgbotapi.Update, tokens []string) {
 
 }
 
-// tailf lists the last 5 or n torrents
-func tailf(ud tgbotapi.Update, tokens []string) {
+// tail lists the last 5 or n torrents
+func tail(ud tgbotapi.Update, tokens []string) {
 	var (
 		n   = 5 // default to 5
 		err error
