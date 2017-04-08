@@ -169,7 +169,7 @@ func (masters masterSlice) Contains(master string) bool {
 // init flags
 func init() {
 	// define arguments and parse them.
-	flag.StringVar(&BotToken, "token", "", "Telegram bot token")
+	flag.StringVar(&BotToken, "token", "", "Telegram bot token, Can be passed via environment variable 'TT_BOTT'")
 	flag.Var(&Masters, "master", "Your telegram handler, So the bot will only respond to you. Can specify more than one")
 	flag.StringVar(&RPCURL, "url", "http://localhost:9091/transmission/rpc", "Transmission RPC URL")
 	flag.StringVar(&Username, "username", "", "Transmission username")
@@ -185,6 +185,13 @@ func init() {
 	}
 
 	flag.Parse()
+
+	// if we don't have BotToken passed, check the environment variable "TT_BOTT"
+	if BotToken == "" {
+		if token := os.Getenv("TT_BOTT"); len(token) > 1 {
+			BotToken = token
+		}
+	}
 
 	// make sure that we have the two madatory arguments: telegram token & master's handler.
 	if BotToken == "" ||
