@@ -265,7 +265,7 @@ func init() {
 	var err error
 	Client, err = transmission.New(RPCURL, Username, Password)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ERROR] Transmission: Make sure you have the right URL, Username and Password")
+		fmt.Fprintf(os.Stderr, "[ERROR] Transmission: Make sure you have the right URL, Username and Password\n")
 		os.Exit(1)
 	}
 
@@ -277,7 +277,7 @@ func init() {
 	var err error
 	Bot, err = tgbotapi.NewBotAPI(BotToken)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ERROR] Telegram: %s", err)
+		fmt.Fprintf(os.Stderr, "[ERROR] Telegram: %s\n", err)
 		os.Exit(1)
 	}
 	logger.Printf("[INFO] Authorized: %s", Bot.Self.UserName)
@@ -287,7 +287,7 @@ func init() {
 
 	Updates, err = Bot.GetUpdatesChan(u)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ERROR] Telegram: %s", err)
+		fmt.Fprintf(os.Stderr, "[ERROR] Telegram: %s\n", err)
 		os.Exit(1)
 	}
 }
