@@ -939,6 +939,13 @@ func trackers(ud tgbotapi.Update) {
 
 // add takes an URL to a .torrent file to add it to transmission
 func add(ud tgbotapi.Update, tokens []string) {
+	var downloadDir string
+
+	if len(tokens) >= 2 && (tokens[0] == "in" || tokens[0] == "to") {
+		downloadDir = tokens[1]
+		tokens = tokens[2:]
+	}
+
 	if len(tokens) == 0 {
 		send("add: needs atleast one URL", ud.Message.Chat.ID, false)
 		return
@@ -947,6 +954,10 @@ func add(ud tgbotapi.Update, tokens []string) {
 	// loop over the URL/s and add them
 	for _, url := range tokens {
 		cmd := transmission.NewAddCmdByURL(url)
+
+		if downloadDir != "" {
+			cmd.SetDownloadDir(downloadDir)
+		}
 
 		torrent, err := Client.ExecuteAddCommand(cmd)
 		if err != nil {
