@@ -13,3 +13,11 @@ Or if you have `Go` installed: `go get -u github.com/pyed/transmission-telegram`
 ## Usage
 
 [Wiki](https://github.com/pyed/transmission-telegram/wiki)
+
+## Docker
+
+Set all the important variables in the file ``docker-compose.yml`` and run command:
+```bash
+docker-compose up -d --build --force-recreate
+```
+`HTTPS_PROXY` - variable is set only if access to the ``api.telegram.org`` is closed directly.

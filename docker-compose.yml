@@ -1,0 +1,15 @@
+version: '3.3'
+
+services:
+  transmission-telegram:
+    build:
+      context: ./
+    container_name: transmission-telegram
+    restart: always
+    environment:
+    - HTTPS_PROXY=""
+    command:
+    - -token=""
+    - -master=""
+    - -url=""
+    - -password=""
