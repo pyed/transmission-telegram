@@ -4,10 +4,6 @@
 
 <img src="https://raw.github.com/pyed/transmission-telegram/master/demo.gif" width="400" />
 
-## Usage
-
-[Wiki](https://github.com/pyed/transmission-telegram/wiki)
-
 ## CLI
 
 ###  Install
@@ -16,7 +12,12 @@ Just [download](https://github.com/pyed/transmission-telegram/releases) the appr
 
 Or if you have `Go` installed: `go get -u github.com/pyed/transmission-telegram`
 
-##  Docker
+## Usage
+
+[Wiki](https://github.com/pyed/transmission-telegram/wiki)
+
+
+##  Docker Alternate Installation Route
 
 ### Standalone
 
