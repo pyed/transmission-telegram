@@ -32,16 +32,16 @@ const (
 	Lists the last n number of torrents, n defaults to 5 if no argument is provided.
 
 	*down* or *dl*
-	Lists torrents with the status of Downloading or in the queue to download.
+	Lists torrents with the status of _Downloading_ or in the queue to download.
 
 	*seeding* or *sd*
-	Lists torrents with the status of Seeding or in the queue to seed.
+	Lists torrents with the status of _Seeding_ or in the queue to seed.
 	
 	*paused* or *pa*
-	Lists Paused torrents.
+	Lists _Paused_ torrents.
 
 	*checking* or *ch*
-	Lists torrents with the status of Verifying or in the queue to verify.
+	Lists torrents with the status of _Verifying_ or in the queue to verify.
 	
 	*active* or *ac*
 	Lists torrents that are actively uploading or downloading.
@@ -50,13 +50,13 @@ const (
 	Lists torrents with with errors along with the error message.
 
 	*sort* or *so*
-	Manipulate the sorting of the aforementioned commands, Call it without arguments for more. 
+	Manipulate the sorting of the aforementioned commands. Call it without arguments for more. 
 
 	*trackers* or *tr*
 	Lists all the trackers along with the number of torrents.
 
 	*add* or *ad*
-	Takes one or many URLs or magnets to add them, You can send a .torrent file via Telegram to add it.
+	Takes one or many URLs or magnets to add them. You can send a ".torrent" file via Telegram to add it.
 
 	*search* or *se*
 	Takes a query and lists torrents with matching names.
