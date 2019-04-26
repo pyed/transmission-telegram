@@ -391,7 +391,7 @@ func main() {
 
 		default:
 			// no such command, try help
-			go send("no such command, try /help", update.Message.Chat.ID, false)
+			go send("No such command, try /help", update.Message.Chat.ID, false)
 
 		}
 	}
@@ -403,7 +403,7 @@ func main() {
 func list(ud tgbotapi.Update, tokens []string) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
-		send("list: "+err.Error(), ud.Message.Chat.ID, false)
+		send("*list:* "+err.Error(), ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -413,7 +413,7 @@ func list(ud tgbotapi.Update, tokens []string) {
 		// (?i) for case insensitivity
 		regx, err := regexp.Compile("(?i)" + tokens[0])
 		if err != nil {
-			send("list: "+err.Error(), ud.Message.Chat.ID, false)
+			send("*list:* "+err.Error(), ud.Message.Chat.ID, false)
 			return
 		}
 
@@ -431,10 +431,10 @@ func list(ud tgbotapi.Update, tokens []string) {
 	if buf.Len() == 0 {
 		// if we got a tracker query show different message
 		if len(tokens) != 0 {
-			send(fmt.Sprintf("list: No tracker matches: *%s*", tokens[0]), ud.Message.Chat.ID, true)
+			send(fmt.Sprintf("*list:* No tracker matches: *%s*", tokens[0]), ud.Message.Chat.ID, true)
 			return
 		}
-		send("list: No torrents", ud.Message.Chat.ID, false)
+		send("*list:* no torrents", ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -451,14 +451,14 @@ func head(ud tgbotapi.Update, tokens []string) {
 	if len(tokens) > 0 {
 		n, err = strconv.Atoi(tokens[0])
 		if err != nil {
-			send("head: argument must be a number", ud.Message.Chat.ID, false)
+			send("*head:* argument must be a number", ud.Message.Chat.ID, false)
 			return
 		}
 	}
 
 	torrents, err := Client.GetTorrents()
 	if err != nil {
-		send("head: "+err.Error(), ud.Message.Chat.ID, false)
+		send("*head:* "+err.Error(), ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -477,7 +477,7 @@ func head(ud tgbotapi.Update, tokens []string) {
 	}
 
 	if buf.Len() == 0 {
-		send("head: No torrents", ud.Message.Chat.ID, false)
+		send("*head:* no torrents", ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -532,14 +532,14 @@ func tailf(ud tgbotapi.Update, tokens []string) {
 	if len(tokens) > 0 {
 		n, err = strconv.Atoi(tokens[0])
 		if err != nil {
-			send("tail: argument must be a number", ud.Message.Chat.ID, false)
+			send("*tail:* argument must be a number", ud.Message.Chat.ID, false)
 			return
 		}
 	}
 
 	torrents, err := Client.GetTorrents()
 	if err != nil {
-		send("tail: "+err.Error(), ud.Message.Chat.ID, false)
+		send("*tail:* "+err.Error(), ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -558,7 +558,7 @@ func tailf(ud tgbotapi.Update, tokens []string) {
 	}
 
 	if buf.Len() == 0 {
-		send("tail: No torrents", ud.Message.Chat.ID, false)
+		send("*tail:* no torrents", ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -607,7 +607,7 @@ func tailf(ud tgbotapi.Update, tokens []string) {
 func downs(ud tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
-		send("downs: "+err.Error(), ud.Message.Chat.ID, false)
+		send("*downs:* "+err.Error(), ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -631,7 +631,7 @@ func downs(ud tgbotapi.Update) {
 func seeding(ud tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
-		send("seeding: "+err.Error(), ud.Message.Chat.ID, false)
+		send("*seeding:* "+err.Error(), ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -656,7 +656,7 @@ func seeding(ud tgbotapi.Update) {
 func paused(ud tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
-		send("paused: "+err.Error(), ud.Message.Chat.ID, false)
+		send("*paused:* "+err.Error(), ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -682,7 +682,7 @@ func paused(ud tgbotapi.Update) {
 func checking(ud tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
-		send("checking: "+err.Error(), ud.Message.Chat.ID, false)
+		send("*checking:* "+err.Error(), ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -709,7 +709,7 @@ func checking(ud tgbotapi.Update) {
 func active(ud tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
-		send("active: "+err.Error(), ud.Message.Chat.ID, false)
+		send("*active:* "+err.Error(), ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -791,7 +791,7 @@ func active(ud tgbotapi.Update) {
 func errors(ud tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
-		send("errors: "+err.Error(), ud.Message.Chat.ID, false)
+		send("*errors:* "+err.Error(), ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -812,7 +812,7 @@ func errors(ud tgbotapi.Update) {
 // sort changes torrents sorting
 func sort(ud tgbotapi.Update, tokens []string) {
 	if len(tokens) == 0 {
-		send(`sort takes one of:
+		send(`*sort* takes one of:
 			(*id, name, age, size, progress, downspeed, upspeed, download, upload, ratio*)
 			optionally start with (*rev*) for reversed order
 			e.g. "*sort rev size*" to get biggest torrents first.`, ud.Message.Chat.ID, true)
@@ -892,10 +892,10 @@ func sort(ud tgbotapi.Update, tokens []string) {
 	}
 
 	if reversed {
-		send("sort: reversed "+tokens[0], ud.Message.Chat.ID, false)
+		send("*sort:* reversed "+tokens[0], ud.Message.Chat.ID, false)
 		return
 	}
-	send("sort: "+tokens[0], ud.Message.Chat.ID, false)
+	send("*sort:* "+tokens[0], ud.Message.Chat.ID, false)
 }
 
 var trackerRegex = regexp.MustCompile(`[https?|udp]://([^:/]*)`)
@@ -904,7 +904,7 @@ var trackerRegex = regexp.MustCompile(`[https?|udp]://([^:/]*)`)
 func trackers(ud tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
-		send("trackers: "+err.Error(), ud.Message.Chat.ID, false)
+		send("*trackers:* "+err.Error(), ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -940,7 +940,7 @@ func trackers(ud tgbotapi.Update) {
 // add takes an URL to a .torrent file to add it to transmission
 func add(ud tgbotapi.Update, tokens []string) {
 	if len(tokens) == 0 {
-		send("add: needs atleast one URL", ud.Message.Chat.ID, false)
+		send("*add:* needs at least one URL", ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -950,16 +950,16 @@ func add(ud tgbotapi.Update, tokens []string) {
 
 		torrent, err := Client.ExecuteAddCommand(cmd)
 		if err != nil {
-			send("add: "+err.Error(), ud.Message.Chat.ID, false)
+			send("*add:* "+err.Error(), ud.Message.Chat.ID, false)
 			continue
 		}
 
 		// check if torrent.Name is empty, then an error happened
 		if torrent.Name == "" {
-			send("add: error adding "+url, ud.Message.Chat.ID, false)
+			send("*add:* error adding "+url, ud.Message.Chat.ID, false)
 			continue
 		}
-		send(fmt.Sprintf("Added: <%d> %s", torrent.ID, torrent.Name), ud.Message.Chat.ID, false)
+		send(fmt.Sprintf("*Added:* <%d> %s", torrent.ID, torrent.Name), ud.Message.Chat.ID, false)
 	}
 }
 
@@ -975,7 +975,7 @@ func receiveTorrent(ud tgbotapi.Update) {
 	}
 	file, err := Bot.GetFile(fconfig)
 	if err != nil {
-		send("receiver: "+err.Error(), ud.Message.Chat.ID, false)
+		send("*receiver:* "+err.Error(), ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -987,7 +987,7 @@ func receiveTorrent(ud tgbotapi.Update) {
 func search(ud tgbotapi.Update, tokens []string) {
 	// make sure that we got a query
 	if len(tokens) == 0 {
-		send("search: needs an argument", ud.Message.Chat.ID, false)
+		send("*search:* needs an argument", ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -995,13 +995,13 @@ func search(ud tgbotapi.Update, tokens []string) {
 	// "(?i)" for case insensitivity
 	regx, err := regexp.Compile("(?i)" + query)
 	if err != nil {
-		send("search: "+err.Error(), ud.Message.Chat.ID, false)
+		send("*search:* "+err.Error(), ud.Message.Chat.ID, false)
 		return
 	}
 
 	torrents, err := Client.GetTorrents()
 	if err != nil {
-		send("search: "+err.Error(), ud.Message.Chat.ID, false)
+		send("*search:* "+err.Error(), ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -1028,14 +1028,14 @@ func latest(ud tgbotapi.Update, tokens []string) {
 	if len(tokens) > 0 {
 		n, err = strconv.Atoi(tokens[0])
 		if err != nil {
-			send("latest: argument must be a number", ud.Message.Chat.ID, false)
+			send("*latest:* argument must be a number", ud.Message.Chat.ID, false)
 			return
 		}
 	}
 
 	torrents, err := Client.GetTorrents()
 	if err != nil {
-		send("latest: "+err.Error(), ud.Message.Chat.ID, false)
+		send("*latest:* "+err.Error(), ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -1052,7 +1052,7 @@ func latest(ud tgbotapi.Update, tokens []string) {
 		buf.WriteString(fmt.Sprintf("<%d> %s\n", torrents[i].ID, torrents[i].Name))
 	}
 	if buf.Len() == 0 {
-		send("latest: No torrents", ud.Message.Chat.ID, false)
+		send("*latest:* No torrents", ud.Message.Chat.ID, false)
 		return
 	}
 	send(buf.String(), ud.Message.Chat.ID, false)
@@ -1061,21 +1061,21 @@ func latest(ud tgbotapi.Update, tokens []string) {
 // info takes an id of a torrent and returns some info about it
 func info(ud tgbotapi.Update, tokens []string) {
 	if len(tokens) == 0 {
-		send("info: needs a torrent ID number", ud.Message.Chat.ID, false)
+		send("*info:* needs a torrent ID number", ud.Message.Chat.ID, false)
 		return
 	}
 
 	for _, id := range tokens {
 		torrentID, err := strconv.Atoi(id)
 		if err != nil {
-			send(fmt.Sprintf("info: %s is not a number", id), ud.Message.Chat.ID, false)
+			send(fmt.Sprintf("*info:* %s is not a number", id), ud.Message.Chat.ID, false)
 			continue
 		}
 
 		// get the torrent
 		torrent, err := Client.GetTorrent(torrentID)
 		if err != nil {
-			send(fmt.Sprintf("info: Can't find a torrent with an ID of %d", torrentID), ud.Message.Chat.ID, false)
+			send(fmt.Sprintf("*info:* Can't find a torrent with an ID of %d", torrentID), ud.Message.Chat.ID, false)
 			continue
 		}
 
@@ -1146,38 +1146,38 @@ func info(ud tgbotapi.Update, tokens []string) {
 func stop(ud tgbotapi.Update, tokens []string) {
 	// make sure that we got at least one argument
 	if len(tokens) == 0 {
-		send("stop: needs an argument", ud.Message.Chat.ID, false)
+		send("*stop:* needs an argument", ud.Message.Chat.ID, false)
 		return
 	}
 
 	// if the first argument is 'all' then stop all torrents
 	if tokens[0] == "all" {
 		if err := Client.StopAll(); err != nil {
-			send("stop: error occurred while stopping some torrents", ud.Message.Chat.ID, false)
+			send("*stop:* error occurred while stopping some torrents", ud.Message.Chat.ID, false)
 			return
 		}
-		send("stopped all torrents", ud.Message.Chat.ID, false)
+		send("Stopped all torrents", ud.Message.Chat.ID, false)
 		return
 	}
 
 	for _, id := range tokens {
 		num, err := strconv.Atoi(id)
 		if err != nil {
-			send(fmt.Sprintf("stop: %s is not a number", id), ud.Message.Chat.ID, false)
+			send(fmt.Sprintf("*stop:* %s is not a number", id), ud.Message.Chat.ID, false)
 			continue
 		}
 		status, err := Client.StopTorrent(num)
 		if err != nil {
-			send("stop: "+err.Error(), ud.Message.Chat.ID, false)
+			send("*stop:* "+err.Error(), ud.Message.Chat.ID, false)
 			continue
 		}
 
 		torrent, err := Client.GetTorrent(num)
 		if err != nil {
-			send(fmt.Sprintf("[fail] stop: No torrent with an ID of %d", num), ud.Message.Chat.ID, false)
+			send(fmt.Sprintf("[fail] *stop:* No torrent with an ID of %d", num), ud.Message.Chat.ID, false)
 			return
 		}
-		send(fmt.Sprintf("[%s] stop: %s", status, torrent.Name), ud.Message.Chat.ID, false)
+		send(fmt.Sprintf("[%s] *stop:* %s", status, torrent.Name), ud.Message.Chat.ID, false)
 	}
 }
 
@@ -1185,17 +1185,17 @@ func stop(ud tgbotapi.Update, tokens []string) {
 func start(ud tgbotapi.Update, tokens []string) {
 	// make sure that we got at least one argument
 	if len(tokens) == 0 {
-		send("start: needs an argument", ud.Message.Chat.ID, false)
+		send("*start:* needs an argument", ud.Message.Chat.ID, false)
 		return
 	}
 
 	// if the first argument is 'all' then start all torrents
 	if tokens[0] == "all" {
 		if err := Client.StartAll(); err != nil {
-			send("start: error occurred while starting some torrents", ud.Message.Chat.ID, false)
+			send("*start:* error occurred while starting some torrents", ud.Message.Chat.ID, false)
 			return
 		}
-		send("started all torrents", ud.Message.Chat.ID, false)
+		send("Started all torrents", ud.Message.Chat.ID, false)
 		return
 
 	}
@@ -1203,21 +1203,21 @@ func start(ud tgbotapi.Update, tokens []string) {
 	for _, id := range tokens {
 		num, err := strconv.Atoi(id)
 		if err != nil {
-			send(fmt.Sprintf("start: %s is not a number", id), ud.Message.Chat.ID, false)
+			send(fmt.Sprintf("*start:* %s is not a number", id), ud.Message.Chat.ID, false)
 			continue
 		}
 		status, err := Client.StartTorrent(num)
 		if err != nil {
-			send("stop: "+err.Error(), ud.Message.Chat.ID, false)
+			send("*start:* "+err.Error(), ud.Message.Chat.ID, false)
 			continue
 		}
 
 		torrent, err := Client.GetTorrent(num)
 		if err != nil {
-			send(fmt.Sprintf("[fail] start: No torrent with an ID of %d", num), ud.Message.Chat.ID, false)
+			send(fmt.Sprintf("[fail] *start:* No torrent with an ID of %d", num), ud.Message.Chat.ID, false)
 			return
 		}
-		send(fmt.Sprintf("[%s] start: %s", status, torrent.Name), ud.Message.Chat.ID, false)
+		send(fmt.Sprintf("[%s] *start:* %s", status, torrent.Name), ud.Message.Chat.ID, false)
 	}
 }
 
@@ -1225,17 +1225,17 @@ func start(ud tgbotapi.Update, tokens []string) {
 func check(ud tgbotapi.Update, tokens []string) {
 	// make sure that we got at least one argument
 	if len(tokens) == 0 {
-		send("check: needs an argument", ud.Message.Chat.ID, false)
+		send("*check:* needs an argument", ud.Message.Chat.ID, false)
 		return
 	}
 
 	// if the first argument is 'all' then start all torrents
 	if tokens[0] == "all" {
 		if err := Client.VerifyAll(); err != nil {
-			send("check: error occurred while verifying some torrents", ud.Message.Chat.ID, false)
+			send("*check:* error occurred while verifying some torrents", ud.Message.Chat.ID, false)
 			return
 		}
-		send("verifying all torrents", ud.Message.Chat.ID, false)
+		send("Verifying all torrents", ud.Message.Chat.ID, false)
 		return
 
 	}
@@ -1243,21 +1243,21 @@ func check(ud tgbotapi.Update, tokens []string) {
 	for _, id := range tokens {
 		num, err := strconv.Atoi(id)
 		if err != nil {
-			send(fmt.Sprintf("check: %s is not a number", id), ud.Message.Chat.ID, false)
+			send(fmt.Sprintf("*check:* %s is not a number", id), ud.Message.Chat.ID, false)
 			continue
 		}
 		status, err := Client.VerifyTorrent(num)
 		if err != nil {
-			send("stop: "+err.Error(), ud.Message.Chat.ID, false)
+			send("*check:* "+err.Error(), ud.Message.Chat.ID, false)
 			continue
 		}
 
 		torrent, err := Client.GetTorrent(num)
 		if err != nil {
-			send(fmt.Sprintf("[fail] check: No torrent with an ID of %d", num), ud.Message.Chat.ID, false)
+			send(fmt.Sprintf("[fail] *check:* No torrent with an ID of %d", num), ud.Message.Chat.ID, false)
 			return
 		}
-		send(fmt.Sprintf("[%s] check: %s", status, torrent.Name), ud.Message.Chat.ID, false)
+		send(fmt.Sprintf("[%s] *check:* %s", status, torrent.Name), ud.Message.Chat.ID, false)
 	}
 
 }
@@ -1266,7 +1266,7 @@ func check(ud tgbotapi.Update, tokens []string) {
 func stats(ud tgbotapi.Update) {
 	stats, err := Client.GetStats()
 	if err != nil {
-		send("stats: "+err.Error(), ud.Message.Chat.ID, false)
+		send("*stats:* "+err.Error(), ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -1307,7 +1307,7 @@ func stats(ud tgbotapi.Update) {
 func speed(ud tgbotapi.Update) {
 	stats, err := Client.GetStats()
 	if err != nil {
-		send("speed: "+err.Error(), ud.Message.Chat.ID, false)
+		send("*speed:* "+err.Error(), ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -1344,7 +1344,7 @@ func speed(ud tgbotapi.Update) {
 func count(ud tgbotapi.Update) {
 	torrents, err := Client.GetTorrents()
 	if err != nil {
-		send("count: "+err.Error(), ud.Message.Chat.ID, false)
+		send("*count:* "+err.Error(), ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -1380,7 +1380,7 @@ func count(ud tgbotapi.Update) {
 func del(ud tgbotapi.Update, tokens []string) {
 	// make sure that we got an argument
 	if len(tokens) == 0 {
-		send("del: needs an ID", ud.Message.Chat.ID, false)
+		send("*del:* needs an ID", ud.Message.Chat.ID, false)
 		return
 	}
 
@@ -1388,17 +1388,17 @@ func del(ud tgbotapi.Update, tokens []string) {
 	for _, id := range tokens {
 		num, err := strconv.Atoi(id)
 		if err != nil {
-			send(fmt.Sprintf("del: %s is not an ID", id), ud.Message.Chat.ID, false)
+			send(fmt.Sprintf("*del:* %s is not an ID", id), ud.Message.Chat.ID, false)
 			return
 		}
 
 		name, err := Client.DeleteTorrent(num, false)
 		if err != nil {
-			send("del: "+err.Error(), ud.Message.Chat.ID, false)
+			send("*del:* "+err.Error(), ud.Message.Chat.ID, false)
 			return
 		}
 
-		send("Deleted: "+name, ud.Message.Chat.ID, false)
+		send("*Deleted:* "+name, ud.Message.Chat.ID, false)
 	}
 }
 
@@ -1406,20 +1406,20 @@ func del(ud tgbotapi.Update, tokens []string) {
 func deldata(ud tgbotapi.Update, tokens []string) {
 	// make sure that we got an argument
 	if len(tokens) == 0 {
-		send("deldata: needs an ID", ud.Message.Chat.ID, false)
+		send("*deldata:* needs an ID", ud.Message.Chat.ID, false)
 		return
 	}
 	// loop over tokens to read each potential id
 	for _, id := range tokens {
 		num, err := strconv.Atoi(id)
 		if err != nil {
-			send(fmt.Sprintf("deldata: %s is not an ID", id), ud.Message.Chat.ID, false)
+			send(fmt.Sprintf("*deldata:* %s is not an ID", id), ud.Message.Chat.ID, false)
 			return
 		}
 
 		name, err := Client.DeleteTorrent(num, true)
 		if err != nil {
-			send("deldata: "+err.Error(), ud.Message.Chat.ID, false)
+			send("*deldata:* "+err.Error(), ud.Message.Chat.ID, false)
 			return
 		}
 
