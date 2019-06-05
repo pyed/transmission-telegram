@@ -13,7 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/dustin/go-humanize"
-	"github.com/hpcloud/tail"
+	"github.com/pyed/tailer"
 	"github.com/pyed/transmission"
 	"gopkg.in/telegram-bot-api.v4"
 )
@@ -169,7 +169,7 @@ func (masters masterSlice) Contains(master string) bool {
 // init flags
 func init() {
 	// define arguments and parse them.
-	flag.StringVar(&BotToken, "token", "", "Telegram bot token")
+	flag.StringVar(&BotToken, "token", "", "Telegram bot token, Can be passed via environment variable 'TT_BOTT'")
 	flag.Var(&Masters, "master", "Your telegram handler, So the bot will only respond to you. Can specify more than one")
 	flag.StringVar(&RPCURL, "url", "http://localhost:9091/transmission/rpc", "Transmission RPC URL")
 	flag.StringVar(&Username, "username", "", "Transmission username")
@@ -180,11 +180,18 @@ func init() {
 
 	// set the usage message
 	flag.Usage = func() {
-		fmt.Fprint(os.Stderr, "Usage: transmission-bot <-token=TOKEN> <-master=@tuser> [-master=@yuser2] [-url=http://] [-username=user] [-password=pass]\n\n")
+		fmt.Fprint(os.Stderr, "Usage: transmission-telegram <-token=TOKEN> <-master=@tuser> [-master=@yuser2] [-url=http://] [-username=user] [-password=pass]\n\n")
 		flag.PrintDefaults()
 	}
 
 	flag.Parse()
+
+	// if we don't have BotToken passed, check the environment variable "TT_BOTT"
+	if BotToken == "" {
+		if token := os.Getenv("TT_BOTT"); len(token) > 1 {
+			BotToken = token
+		}
+	}
 
 	// make sure that we have the two madatory arguments: telegram token & master's handler.
 	if BotToken == "" ||
@@ -211,16 +218,7 @@ func init() {
 	// if we got a transmission log file, monitor it for torrents completion to notify upon them.
 	if TransLogFile != "" {
 		go func() {
-			ft, err := tail.TailFile(TransLogFile, tail.Config{
-				Location:  &tail.SeekInfo{0, 2}, // ignore previous log lines
-				Follow:    true,                 // as the -f in tail -f
-				MustExist: true,                 // if you can't find the file, don't wait for it to be created
-				Logger:    logger,               // log to our logger
-			})
-			if err != nil {
-				logger.Printf("[ERROR] tailing transmission log: %s", err)
-				return
-			}
+			ft := tailer.RunFileTailer(TransLogFile, false, nil)
 
 			// [2017-02-22 21:00:00.898] File-Name State changed from "Incomplete" to "Complete" (torrent.c:2218)
 			const (
@@ -229,16 +227,23 @@ func init() {
 				end       = len(` State changed from "Incomplete" to "Complete" (torrent.c:2218)`)
 			)
 
-			for line := range ft.Lines {
-				if strings.Contains(line.Text, substring) {
-					// if we don't have a chatID continue
-					if chatID == 0 {
-						continue
-					}
+			for {
+				select {
+				case line := <-ft.Lines():
+					if strings.Contains(line, substring) {
+						// if we don't have a chatID continue
+						if chatID == 0 {
+							continue
+						}
 
-					msg := fmt.Sprintf("Completed: %s", line.Text[start:len(line.Text)-end])
-					send(msg, chatID, false)
+						msg := fmt.Sprintf("Completed: %s", line[start:len(line)-end])
+						send(msg, chatID, false)
+					}
+				case err := <-ft.Errors():
+					logger.Printf("[ERROR] tailing transmission log: %s", err)
+					return
 				}
+
 			}
 		}()
 	}
@@ -260,7 +265,7 @@ func init() {
 	var err error
 	Client, err = transmission.New(RPCURL, Username, Password)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ERROR] Transmission: Make sure you have the right URL, Username and Password")
+		fmt.Fprintf(os.Stderr, "[ERROR] Transmission: Make sure you have the right URL, Username and Password\n")
 		os.Exit(1)
 	}
 
@@ -272,7 +277,7 @@ func init() {
 	var err error
 	Bot, err = tgbotapi.NewBotAPI(BotToken)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ERROR] Telegram: %s", err)
+		fmt.Fprintf(os.Stderr, "[ERROR] Telegram: %s\n", err)
 		os.Exit(1)
 	}
 	logger.Printf("[INFO] Authorized: %s", Bot.Self.UserName)
@@ -282,7 +287,7 @@ func init() {
 
 	Updates, err = Bot.GetUpdatesChan(u)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ERROR] Telegram: %s", err)
+		fmt.Fprintf(os.Stderr, "[ERROR] Telegram: %s\n", err)
 		os.Exit(1)
 	}
 }
@@ -317,7 +322,7 @@ func main() {
 			go head(update, tokens[1:])
 
 		case "tail", "/tail", "ta", "/ta":
-			go tailf(update, tokens[1:])
+			go tail(update, tokens[1:])
 
 		case "downs", "/downs", "dl", "/dl":
 			go downs(update)
@@ -522,8 +527,8 @@ func head(ud tgbotapi.Update, tokens []string) {
 
 }
 
-// tailf lists the last 5 or n torrents
-func tailf(ud tgbotapi.Update, tokens []string) {
+// tail lists the last 5 or n torrents
+func tail(ud tgbotapi.Update, tokens []string) {
 	var (
 		n   = 5 // default to 5
 		err error
