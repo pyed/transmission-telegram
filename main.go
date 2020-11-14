@@ -312,6 +312,14 @@ func main() {
 
 		// tokenize the update
 		tokens := strings.Split(update.Message.Text, " ")
+
+		// preprocess message based on URL schema
+		// in case those were added from the mobile via "Share..." option
+		// when it is not possible to easily prepend it with "add" command
+		if strings.HasPrefix(tokens[0], "magnet") || strings.HasPrefix(tokens[0], "http") {
+			tokens = append([]string{"add"}, tokens...)
+		}
+
 		command := strings.ToLower(tokens[0])
 
 		switch command {
