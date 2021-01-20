@@ -19,10 +19,10 @@ import (
 )
 
 const (
-	VERSION = "v1.4"
+	VERSION = "v1.4.1"
 
 	HELP = `
-	*list* or *li*
+	*list* or *li* or *ls*
 	Lists all the torrents, takes an optional argument which is a query to list only torrents that has a tracker matches the query, or some of it.
 
 	*head* or *he*
@@ -76,7 +76,7 @@ const (
 	*check* or *ck*
 	Takes one or more torrent's IDs to verify them, or _all_ to verify all torrents.
 
-	*del*
+	*del* or *rm*
 	Takes one or more torrent's IDs to delete them.
 
 	*deldata*
@@ -94,7 +94,7 @@ const (
 	*help*
 	Shows this help message.
 
-	*version*
+	*version* or *ver*
 	Shows version numbers.
 
 	- Prefix commands with '/' if you want to talk to your bot in a group. 
@@ -323,7 +323,7 @@ func main() {
 		command := strings.ToLower(tokens[0])
 
 		switch command {
-		case "list", "/list", "li", "/li":
+		case "list", "/list", "li", "/li", "/ls", "ls":
 			go list(update, tokens[1:])
 
 		case "head", "/head", "he", "/he":
@@ -386,7 +386,7 @@ func main() {
 		case "count", "/count", "co", "/co":
 			go count(update)
 
-		case "del", "/del":
+		case "del", "/del", "rm", "/rm":
 			go del(update, tokens[1:])
 
 		case "deldata", "/deldata":
@@ -395,7 +395,7 @@ func main() {
 		case "help", "/help":
 			go send(HELP, update.Message.Chat.ID, true)
 
-		case "version", "/version":
+		case "version", "/version", "ver", "/ver":
 			go getVersion(update)
 
 		case "":
