@@ -1,17 +1,19 @@
 FROM golang:alpine as build
 
 ENV GOOS=linux \
-    GOARCH=amd64 
+    GOARCH=amd64
 
 RUN apk add --no-cache git
 
 WORKDIR /go/src/transmission-telegram
 COPY . .
 
+RUN go mod init transmission-telegram
 RUN go get -d -v ./...
 RUN go install -v ./...
 
 RUN go build -o main .
+# RUN ls -lahR /go/
 
 FROM alpine:latest as certs
 RUN apk --update add ca-certificates
