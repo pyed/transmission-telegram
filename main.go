@@ -31,7 +31,7 @@ const (
 	*tail* or *ta*
 	Lists the last n number of torrents, n defaults to 5 if no argument is provided.
 
-	*down* or *dl*
+	*downs* or *dl*
 	Lists torrents with the status of _Downloading_ or in the queue to download.
 
 	*seeding* or *sd*
