@@ -15,7 +15,7 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/pyed/tailer"
 	"github.com/pyed/transmission"
-	"gopkg.in/telegram-bot-api.v4"
+	tgbotapi "gopkg.in/telegram-bot-api.v4"
 )
 
 const (
@@ -36,13 +36,13 @@ const (
 
 	*seeding* or *sd*
 	Lists torrents with the status of _Seeding_ or in the queue to seed.
-	
+
 	*paused* or *pa*
 	Lists _Paused_ torrents.
 
 	*checking* or *ch*
 	Lists torrents with the status of _Verifying_ or in the queue to verify.
-	
+
 	*active* or *ac*
 	Lists torrents that are actively uploading or downloading.
 
@@ -54,6 +54,10 @@ const (
 
 	*trackers* or *tr*
 	Lists all the trackers along with the number of torrents.
+
+	*downloaddir* or *dd*
+	Set download directory to the specified path. Transmission will automatically create a
+	directory in case you provided an inexistent one.
 
 	*add* or *ad*
 	Takes one or many URLs or magnets to add them. You can send a ".torrent" file via Telegram to add it.
@@ -84,10 +88,10 @@ const (
 
 	*stats* or *sa*
 	Shows Transmission's stats.
-	
+
 	*speed* or *ss*
 	Shows the upload and download speeds.
-	
+
 	*count* or *co*
 	Shows the torrents counts per status.
 
@@ -355,6 +359,9 @@ func main() {
 
 		case "trackers", "/trackers", "tr", "/tr":
 			go trackers(update)
+
+		case "downloaddir", "dd":
+			go downloaddir(update, tokens[1:])
 
 		case "add", "/add", "ad", "/ad":
 			go add(update, tokens[1:])
@@ -948,6 +955,40 @@ func trackers(ud tgbotapi.Update) {
 		return
 	}
 	send(buf.String(), ud.Message.Chat.ID, false)
+}
+
+func newDownloadDirCommand() *transmission.Command {
+	cmd := &transmission.Command{}
+	cmd.Method = "session-set"
+	return cmd
+}
+
+// downloaddir takes a path and sets it as the download directory
+func downloaddir(ud tgbotapi.Update, tokens []string) {
+	if len(tokens) < 1 {
+		send("Please, specify a path for downloaddir", ud.Message.Chat.ID, false)
+		return
+	}
+
+	downloadDir := tokens[0]
+
+	cmd := newDownloadDirCommand()
+	cmd.SetDownloadDir(downloadDir)
+
+	out, err := Client.ExecuteCommand(cmd)
+	if err != nil {
+		send("*downloaddir:* "+err.Error(), ud.Message.Chat.ID, false)
+		return
+	}
+	if out.Result != "success" {
+		send("*downloaddir:* "+out.Result, ud.Message.Chat.ID, false)
+		return
+	}
+
+	send(
+		"*downloaddir:* downloaddir has been successfully changed to"+downloadDir,
+		ud.Message.Chat.ID, false,
+	)
 }
 
 // add takes an URL to a .torrent file to add it to transmission
