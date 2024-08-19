@@ -31,7 +31,7 @@ const (
 	*tail* or *ta*
 	Lists the last n number of torrents, n defaults to 5 if no argument is provided.
 
-	*downs* or *dl*
+	*downs* or *dg*
 	Lists torrents with the status of _Downloading_ or in the queue to download.
 
 	*seeding* or *sd*
@@ -50,7 +50,7 @@ const (
 	Lists torrents with with errors along with the error message.
 
 	*sort* or *so*
-	Manipulate the sorting of the aforementioned commands. Call it without arguments for more. 
+	Manipulate the sorting of the aforementioned commands. Call it without arguments for more.
 
 	*trackers* or *tr*
 	Lists all the trackers along with the number of torrents.
@@ -88,6 +88,12 @@ const (
 
 	*stats* or *sa*
 	Shows Transmission's stats.
+
+	*downlimit* or *dl*
+	Set global limit for download speed in kilobytes.
+
+	*uplimit* or *ul*
+	Set global limit for upload speed in kilobytes.
 
 	*speed* or *ss*
 	Shows the upload and download speeds.
@@ -336,7 +342,7 @@ func main() {
 		case "tail", "/tail", "ta", "/ta":
 			go tail(update, tokens[1:])
 
-		case "downs", "/downs", "dl", "/dl":
+		case "downs", "/downs", "dg", "/dg":
 			go downs(update)
 
 		case "seeding", "/seeding", "sd", "/sd":
@@ -386,6 +392,12 @@ func main() {
 
 		case "stats", "/stats", "sa", "/sa":
 			go stats(update)
+
+		case "downlimit", "dl":
+			go downlimit(update, tokens[1:])
+
+		case "uplimit", "ul":
+			go uplimit(update, tokens[1:])
 
 		case "speed", "/speed", "ss", "/ss":
 			go speed(update)
@@ -1355,6 +1367,75 @@ func stats(ud tgbotapi.Update) {
 	)
 
 	send(msg, ud.Message.Chat.ID, true)
+}
+
+type speedLimitType string
+
+const (
+	downloadLimitType = "downloadlimit"
+	uploadLimitType   = "uploadlimit"
+)
+
+// newSpeedLimitCommand creates a new command that mutates either a download or upload limit.
+func newSpeedLimitCommand(limitType speedLimitType, limit uint) *transmission.Command {
+	cmd := &transmission.Command{}
+	cmd.Method = "session-set"
+
+	switch limitType {
+	case downloadLimitType:
+		cmd.Arguments.SpeedLimitDown = limit
+	case uploadLimitType:
+		cmd.Arguments.SpeedLimitUp = limit
+	default:
+		return nil
+	}
+
+	return cmd
+}
+
+// downlimit sets the global downlimit to a provided value in kilobytes
+func downlimit(ud tgbotapi.Update, tokens []string) {
+	speedLimit(ud, tokens, downloadLimitType)
+}
+
+// uplimit sets the global uplimit to a provided value in kilobytes
+func uplimit(ud tgbotapi.Update, tokens []string) {
+	speedLimit(ud, tokens, uploadLimitType)
+}
+
+// speedLimit sets either a donwload or upload limit
+func speedLimit(ud tgbotapi.Update, tokens []string, limitType speedLimitType) {
+	if len(tokens) < 1 {
+		send("Please, specify the limit", ud.Message.Chat.ID, false)
+		return
+	}
+
+	limit, err := strconv.ParseUint(tokens[0], 10, 32)
+	if err != nil {
+		send("Please, specify the limit as number of kilobytes", ud.Message.Chat.ID, false)
+		return
+	}
+
+	speedLimitCmd := newSpeedLimitCommand(limitType, uint(limit), nil)
+	if speedLimitCmd == nil {
+		send(fmt.Sprintf("*%s:* internal error", limitType), ud.Message.Chat.ID, false)
+		return
+	}
+
+	out, err := Client.ExecuteCommand(speedLimitCmd)
+	if err != nil {
+		send(fmt.Sprintf("*%s:* %v", limitType, err.Error()), ud.Message.Chat.ID, false)
+		return
+	}
+	if out.Result != "success" {
+		send(fmt.Sprintf("*%s:* %v", limitType, out.Result), ud.Message.Chat.ID, false)
+		return
+	}
+
+	send(
+		fmt.Sprintf("*%s:* limit has been successfully changed to %d KB/s", limitType, limit),
+		ud.Message.Chat.ID, false,
+	)
 }
 
 // speed will echo back the current download and upload speeds
