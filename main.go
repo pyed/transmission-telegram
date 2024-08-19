@@ -969,12 +969,6 @@ func trackers(ud tgbotapi.Update) {
 	send(buf.String(), ud.Message.Chat.ID, false)
 }
 
-func newDownloadDirCommand() *transmission.Command {
-	cmd := &transmission.Command{}
-	cmd.Method = "session-set"
-	return cmd
-}
-
 // downloaddir takes a path and sets it as the download directory
 func downloaddir(ud tgbotapi.Update, tokens []string) {
 	if len(tokens) < 1 {
@@ -984,7 +978,7 @@ func downloaddir(ud tgbotapi.Update, tokens []string) {
 
 	downloadDir := tokens[0]
 
-	cmd := newDownloadDirCommand()
+	cmd := transmission.NewSessionSetCommand()
 	cmd.SetDownloadDir(downloadDir)
 
 	out, err := Client.ExecuteCommand(cmd)
@@ -1369,42 +1363,18 @@ func stats(ud tgbotapi.Update) {
 	send(msg, ud.Message.Chat.ID, true)
 }
 
-type speedLimitType string
-
-const (
-	downloadLimitType = "downloadlimit"
-	uploadLimitType   = "uploadlimit"
-)
-
-// newSpeedLimitCommand creates a new command that mutates either a download or upload limit.
-func newSpeedLimitCommand(limitType speedLimitType, limit uint) *transmission.Command {
-	cmd := &transmission.Command{}
-	cmd.Method = "session-set"
-
-	switch limitType {
-	case downloadLimitType:
-		cmd.Arguments.SpeedLimitDown = limit
-	case uploadLimitType:
-		cmd.Arguments.SpeedLimitUp = limit
-	default:
-		return nil
-	}
-
-	return cmd
-}
-
 // downlimit sets the global downlimit to a provided value in kilobytes
 func downlimit(ud tgbotapi.Update, tokens []string) {
-	speedLimit(ud, tokens, downloadLimitType)
+	speedLimit(ud, tokens, transmission.DownloadLimitType)
 }
 
 // uplimit sets the global uplimit to a provided value in kilobytes
 func uplimit(ud tgbotapi.Update, tokens []string) {
-	speedLimit(ud, tokens, uploadLimitType)
+	speedLimit(ud, tokens, transmission.UploadLimitType)
 }
 
 // speedLimit sets either a donwload or upload limit
-func speedLimit(ud tgbotapi.Update, tokens []string, limitType speedLimitType) {
+func speedLimit(ud tgbotapi.Update, tokens []string, limitType transmission.SpeedLimitType) {
 	if len(tokens) < 1 {
 		send("Please, specify the limit", ud.Message.Chat.ID, false)
 		return
@@ -1416,7 +1386,7 @@ func speedLimit(ud tgbotapi.Update, tokens []string, limitType speedLimitType) {
 		return
 	}
 
-	speedLimitCmd := newSpeedLimitCommand(limitType, uint(limit), nil)
+	speedLimitCmd := transmission.NewSpeedLimitCommand(limitType, uint(limit))
 	if speedLimitCmd == nil {
 		send(fmt.Sprintf("*%s:* internal error", limitType), ud.Message.Chat.ID, false)
 		return
