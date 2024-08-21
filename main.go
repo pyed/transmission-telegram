@@ -15,7 +15,7 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/pyed/tailer"
 	"github.com/pyed/transmission"
-	"gopkg.in/telegram-bot-api.v4"
+	tgbotapi "gopkg.in/telegram-bot-api.v4"
 )
 
 const (
@@ -31,18 +31,18 @@ const (
 	*tail* or *ta*
 	Lists the last n number of torrents, n defaults to 5 if no argument is provided.
 
-	*downs* or *dl*
+	*downs* or *dg*
 	Lists torrents with the status of _Downloading_ or in the queue to download.
 
 	*seeding* or *sd*
 	Lists torrents with the status of _Seeding_ or in the queue to seed.
-	
+
 	*paused* or *pa*
 	Lists _Paused_ torrents.
 
 	*checking* or *ch*
 	Lists torrents with the status of _Verifying_ or in the queue to verify.
-	
+
 	*active* or *ac*
 	Lists torrents that are actively uploading or downloading.
 
@@ -50,10 +50,14 @@ const (
 	Lists torrents with with errors along with the error message.
 
 	*sort* or *so*
-	Manipulate the sorting of the aforementioned commands. Call it without arguments for more. 
+	Manipulate the sorting of the aforementioned commands. Call it without arguments for more.
 
 	*trackers* or *tr*
 	Lists all the trackers along with the number of torrents.
+
+	*downloaddir* or *dd*
+	Set download directory to the specified path. Transmission will automatically create a
+	directory in case you provided an inexistent one.
 
 	*add* or *ad*
 	Takes one or many URLs or magnets to add them. You can send a ".torrent" file via Telegram to add it.
@@ -84,10 +88,16 @@ const (
 
 	*stats* or *sa*
 	Shows Transmission's stats.
-	
+
+	*downlimit* or *dl*
+	Set global limit for download speed in kilobytes.
+
+	*uplimit* or *ul*
+	Set global limit for upload speed in kilobytes.
+
 	*speed* or *ss*
 	Shows the upload and download speeds.
-	
+
 	*count* or *co*
 	Shows the torrents counts per status.
 
@@ -332,7 +342,7 @@ func main() {
 		case "tail", "/tail", "ta", "/ta":
 			go tail(update, tokens[1:])
 
-		case "downs", "/downs", "dl", "/dl":
+		case "downs", "/downs", "dg", "/dg":
 			go downs(update)
 
 		case "seeding", "/seeding", "sd", "/sd":
@@ -355,6 +365,9 @@ func main() {
 
 		case "trackers", "/trackers", "tr", "/tr":
 			go trackers(update)
+
+		case "downloaddir", "dd":
+			go downloaddir(update, tokens[1:])
 
 		case "add", "/add", "ad", "/ad":
 			go add(update, tokens[1:])
@@ -379,6 +392,12 @@ func main() {
 
 		case "stats", "/stats", "sa", "/sa":
 			go stats(update)
+
+		case "downlimit", "dl":
+			go downlimit(update, tokens[1:])
+
+		case "uplimit", "ul":
+			go uplimit(update, tokens[1:])
 
 		case "speed", "/speed", "ss", "/ss":
 			go speed(update)
@@ -950,6 +969,34 @@ func trackers(ud tgbotapi.Update) {
 	send(buf.String(), ud.Message.Chat.ID, false)
 }
 
+// downloaddir takes a path and sets it as the download directory
+func downloaddir(ud tgbotapi.Update, tokens []string) {
+	if len(tokens) < 1 {
+		send("Please, specify a path for downloaddir", ud.Message.Chat.ID, false)
+		return
+	}
+
+	downloadDir := tokens[0]
+
+	cmd := transmission.NewSessionSetCommand()
+	cmd.SetDownloadDir(downloadDir)
+
+	out, err := Client.ExecuteCommand(cmd)
+	if err != nil {
+		send("*downloaddir:* "+err.Error(), ud.Message.Chat.ID, false)
+		return
+	}
+	if out.Result != "success" {
+		send("*downloaddir:* "+out.Result, ud.Message.Chat.ID, false)
+		return
+	}
+
+	send(
+		"*downloaddir:* downloaddir has been successfully changed to"+downloadDir,
+		ud.Message.Chat.ID, false,
+	)
+}
+
 // add takes an URL to a .torrent file to add it to transmission
 func add(ud tgbotapi.Update, tokens []string) {
 	if len(tokens) == 0 {
@@ -1314,6 +1361,51 @@ func stats(ud tgbotapi.Update) {
 	)
 
 	send(msg, ud.Message.Chat.ID, true)
+}
+
+// downlimit sets the global downlimit to a provided value in kilobytes
+func downlimit(ud tgbotapi.Update, tokens []string) {
+	speedLimit(ud, tokens, transmission.DownloadLimitType)
+}
+
+// uplimit sets the global uplimit to a provided value in kilobytes
+func uplimit(ud tgbotapi.Update, tokens []string) {
+	speedLimit(ud, tokens, transmission.UploadLimitType)
+}
+
+// speedLimit sets either a donwload or upload limit
+func speedLimit(ud tgbotapi.Update, tokens []string, limitType transmission.SpeedLimitType) {
+	if len(tokens) < 1 {
+		send("Please, specify the limit", ud.Message.Chat.ID, false)
+		return
+	}
+
+	limit, err := strconv.ParseUint(tokens[0], 10, 32)
+	if err != nil {
+		send("Please, specify the limit as number of kilobytes", ud.Message.Chat.ID, false)
+		return
+	}
+
+	speedLimitCmd := transmission.NewSpeedLimitCommand(limitType, uint(limit))
+	if speedLimitCmd == nil {
+		send(fmt.Sprintf("*%s:* internal error", limitType), ud.Message.Chat.ID, false)
+		return
+	}
+
+	out, err := Client.ExecuteCommand(speedLimitCmd)
+	if err != nil {
+		send(fmt.Sprintf("*%s:* %v", limitType, err.Error()), ud.Message.Chat.ID, false)
+		return
+	}
+	if out.Result != "success" {
+		send(fmt.Sprintf("*%s:* %v", limitType, out.Result), ud.Message.Chat.ID, false)
+		return
+	}
+
+	send(
+		fmt.Sprintf("*%s:* limit has been successfully changed to %d KB/s", limitType, limit),
+		ud.Message.Chat.ID, false,
+	)
 }
 
 // speed will echo back the current download and upload speeds
