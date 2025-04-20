@@ -57,5 +57,5 @@ telegram-transmission-bot:
       - emby
     network_mode: 'host'
     image: kevinhalpin/transmission-telegram:latest
-    command: '-token=${TELEGRAM_TRANSMISSION_BOT} -master=${TELEGRAM_USERNAME} -url=${TRANSMISSION_URL} -   username=${TRANSMISSION_USERNAME} -password=${PASS}'
+    command: '-token=${TELEGRAM_TRANSMISSION_BOT} -master=${TELEGRAM_USERNAME} -url=${TRANSMISSION_URL} -username=${TRANSMISSION_USERNAME} -password=${PASS}'
 ```
