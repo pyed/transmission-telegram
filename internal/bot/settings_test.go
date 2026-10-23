@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -108,6 +109,47 @@ func TestPathCommandsPreserveSpaces(t *testing.T) {
 		if len(bodies) != 1 || !strings.Contains(bodies[0], "/media/My Downloads") {
 			t.Fatalf("%s did not preserve spaced path: %v", method, bodies)
 		}
+	}
+}
+
+// /downlimit 0 and off turn the limit off, rather than set a limit of 0 KB/s
+// that stalls every download, and leave its value for later; a number sets
+// and enables it; without an argument the limit is shown.
+func TestSpeedLimits(t *testing.T) {
+	ft := newFakeTelegram(t)
+	fts := newFakeTransmission(t)
+	fts.session = `{"version":"test","speed-limit-down":300,"speed-limit-down-enabled":true,` +
+		`"speed-limit-up":50,"speed-limit-up-enabled":false}`
+	client, err := transmission.New(fts.URL+"/transmission/rpc", "", "")
+	if err != nil {
+		t.Fatalf("failed to create transmission client: %v", err)
+	}
+	b := newTestBot(t, ft.newBot(t), client)
+	ctx := context.Background()
+
+	b.downlimit(ctx, req("0"))
+	b.downlimit(ctx, req("OFF"))
+	b.uplimit(ctx, req("250"))
+	b.uplimit(ctx, req("fast"))
+	want := []string{
+		`{"method":"session-set","arguments":{"speed-limit-down-enabled":false}}`,
+		`{"method":"session-set","arguments":{"speed-limit-down-enabled":false}}`,
+		`{"method":"session-set","arguments":{"speed-limit-up":250,"speed-limit-up-enabled":true}}`,
+	}
+	if got := fts.requestBodies("session-set"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("session-set requests:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+
+	b.downlimit(ctx, req())
+	b.uplimit(ctx, req())
+	texts := ft.sentTexts()
+	wantTexts := []string{
+		"<b>Download limit:</b> off", "<b>Download limit:</b> off", "<b>Upload limit:</b> 250 KB/s",
+		"<b>uplimit:</b> give the limit in KB/s, or off",
+		"<b>Download limit:</b> 300 KB/s", "<b>Upload limit:</b> off",
+	}
+	if !reflect.DeepEqual(texts, wantTexts) {
+		t.Fatalf("replies = %q\nwant %q", texts, wantTexts)
 	}
 }
 

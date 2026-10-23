@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -28,6 +29,9 @@ type fakeTransmission struct {
 	torrents   transmission.Torrents
 	// stall, when set, holds torrent-get requests until it is closed.
 	stall chan struct{}
+	// session is session-get's arguments, as JSON; just a version when
+	// empty.
+	session string
 }
 
 func (f *fakeTransmission) setStall(stall chan struct{}) {
@@ -55,7 +59,13 @@ func newFakeTransmission(t *testing.T) *fakeTransmission {
 		w.Header().Set("Content-Type", "application/json")
 		switch req.Method {
 		case "session-get":
-			_, _ = w.Write([]byte(`{"result":"success","arguments":{"version":"test"}}`))
+			f.mu.Lock()
+			session := f.session
+			f.mu.Unlock()
+			if session == "" {
+				session = `{"version":"test"}`
+			}
+			_, _ = fmt.Fprintf(w, `{"result":"success","arguments":%s}`, session)
 		case "torrent-add":
 			f.mu.Lock()
 			f.addBodies = append(f.addBodies, string(body))

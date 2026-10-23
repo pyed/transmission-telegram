@@ -109,33 +109,69 @@ func (b *Bot) downloaddir(ctx context.Context, r *request) {
 	b.reply(ctx, r, "<b>downloaddir:</b> downloaddir has been successfully changed to <code>"+esc(downloadDir)+"</code>")
 }
 
-// downlimit sets the global download limit in kilobytes per second.
+// downlimit shows or sets the global download limit, in KB/s; 0 or off
+// removes it.
 func (b *Bot) downlimit(ctx context.Context, r *request) {
-	b.speedLimit(ctx, r, transmission.DownloadLimitType)
+	b.speedLimit(ctx, r, "downlimit", "Download limit", func(s *transmission.Session) (int64, bool) {
+		return s.SpeedLimitDown, s.SpeedLimitDownEnabled
+	}, func(limit *int64, enabled bool) transmission.SessionSetOptions {
+		return transmission.SessionSetOptions{SpeedLimitDown: limit, SpeedLimitDownEnabled: &enabled}
+	})
 }
 
-// uplimit sets the global upload limit in kilobytes per second.
+// uplimit shows or sets the global upload limit, in KB/s; 0 or off removes
+// it.
 func (b *Bot) uplimit(ctx context.Context, r *request) {
-	b.speedLimit(ctx, r, transmission.UploadLimitType)
+	b.speedLimit(ctx, r, "uplimit", "Upload limit", func(s *transmission.Session) (int64, bool) {
+		return s.SpeedLimitUp, s.SpeedLimitUpEnabled
+	}, func(limit *int64, enabled bool) transmission.SessionSetOptions {
+		return transmission.SessionSetOptions{SpeedLimitUp: limit, SpeedLimitUpEnabled: &enabled}
+	})
 }
 
-func (b *Bot) speedLimit(ctx context.Context, r *request, limitType transmission.SpeedLimitType) {
-	if len(r.args) < 1 {
-		b.reply(ctx, r, "Please, specify the limit")
+// speedLimit shows a global limit without an argument, and otherwise sets
+// it. Transmission takes a limit of 0 as a limit, which stalls every
+// transfer, so 0 turns the limit off, as off does; the limit's value is
+// then left as it was, for when it is turned on again elsewhere.
+func (b *Bot) speedLimit(ctx context.Context, r *request, name, label string,
+	current func(*transmission.Session) (int64, bool), set func(*int64, bool) transmission.SessionSetOptions) {
+	if len(r.args) == 0 {
+		session, err := b.Client.GetSession(ctx)
+		if err != nil {
+			b.replyError(ctx, r, name, err)
+			return
+		}
+		limit, enabled := current(session)
+		b.reply(ctx, r, "<b>"+label+":</b> "+describeLimit(limit, enabled))
 		return
 	}
 
-	limit, err := strconv.ParseUint(r.args[0], 10, 32)
-	if err != nil {
-		b.reply(ctx, r, "Please, specify the limit as number of kilobytes")
+	var limit int64
+	if arg := strings.ToLower(r.args[0]); arg != "off" {
+		parsed, err := strconv.ParseUint(arg, 10, 31)
+		if err != nil {
+			b.reply(ctx, r, "<b>"+name+":</b> give the limit in KB/s, or off")
+			return
+		}
+		limit = int64(parsed)
+	}
+	enabled := limit > 0
+	value := &limit
+	if !enabled {
+		value = nil
+	}
+	if err := b.Client.SetSession(ctx, set(value, enabled)); err != nil {
+		b.replyError(ctx, r, name, err)
 		return
 	}
+	b.reply(ctx, r, "<b>"+label+":</b> "+describeLimit(limit, enabled))
+}
 
-	if err := b.Client.SetSpeedLimit(ctx, limitType, uint(limit)); err != nil {
-		b.replyError(ctx, r, string(limitType), err)
-		return
+func describeLimit(limit int64, enabled bool) string {
+	if !enabled {
+		return "off"
 	}
-	b.reply(ctx, r, fmt.Sprintf("<b>%s:</b> limit has been successfully changed to %d KB/s", limitType, limit))
+	return fmt.Sprintf("%d KB/s", limit)
 }
 
 // turtle toggles or sets alternative speed limits ("Turtle Mode").
