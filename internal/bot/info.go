@@ -33,7 +33,7 @@ func (b *Bot) info(ctx context.Context, r *request) {
 		messageID, _ := b.send(ctx, r.chatID, torrentCard(torrent, true), keyboard)
 
 		// Keep the card live for 'duration * interval'.
-		b.goSafe("live torrent info update", func() {
+		b.launch(ctx, "live torrent card", func(ctx context.Context) {
 			card := func(live bool) func() string {
 				return func() string {
 					torrent, err := b.Client.GetTorrent(torrentID, ctx)

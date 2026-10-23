@@ -26,6 +26,14 @@ type fakeTransmission struct {
 	rpcMethods []string
 	rpcBodies  map[string][]string
 	torrents   transmission.Torrents
+	// stall, when set, holds torrent-get requests until it is closed.
+	stall chan struct{}
+}
+
+func (f *fakeTransmission) setStall(stall chan struct{}) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stall = stall
 }
 
 // newFakeTransmission starts a fake Transmission RPC server that records
@@ -54,6 +62,12 @@ func newFakeTransmission(t *testing.T) *fakeTransmission {
 			f.mu.Unlock()
 			_, _ = w.Write([]byte(`{"result":"success","arguments":{"torrent-added":{"id":7,"name":"Test Torrent","hashString":"abc123"}}}`))
 		case "torrent-get":
+			f.mu.Lock()
+			stall := f.stall
+			f.mu.Unlock()
+			if stall != nil {
+				<-stall
+			}
 			f.mu.Lock()
 			torrents := append(transmission.Torrents(nil), f.torrents...)
 			f.mu.Unlock()

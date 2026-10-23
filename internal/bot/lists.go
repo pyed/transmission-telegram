@@ -229,7 +229,8 @@ func torrentBlocks(torrents transmission.Torrents, live bool) string {
 	return strings.Join(blocks, "\n\n")
 }
 
-// replyLive replies with what render shows and keeps the reply up to date:
+// replyLive replies with what render shows and keeps the reply up to date
+// in the background, so the chat's next command need not wait:
 // render(true) while live, and render(false) for the last edit.
 func (b *Bot) replyLive(ctx context.Context, r *request, name, none string, render func(live bool) (string, error)) {
 	text, err := render(true)
@@ -242,11 +243,13 @@ func (b *Bot) replyLive(ctx context.Context, r *request, name, none string, rend
 		return
 	}
 	messageID := b.reply(ctx, r, text)
-	b.liveUpdate(ctx, r.chatID, messageID, func() string {
-		text, _ := render(true)
-		return text
-	}, func() string {
-		text, _ := render(false)
-		return text
+	b.launch(ctx, "live "+name, func(ctx context.Context) {
+		b.liveUpdate(ctx, r.chatID, messageID, func() string {
+			text, _ := render(true)
+			return text
+		}, func() string {
+			text, _ := render(false)
+			return text
+		})
 	})
 }

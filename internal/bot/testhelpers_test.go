@@ -28,6 +28,7 @@ type fakeTelegram struct {
 	*httptest.Server
 	mu              sync.Mutex
 	texts           []string
+	chats           []string
 	parseModes      []string
 	documents       []string
 	callbackTexts   []string
@@ -85,6 +86,7 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 		case "sendMessage":
 			f.mu.Lock()
 			f.texts = append(f.texts, r.FormValue("text"))
+			f.chats = append(f.chats, r.FormValue("chat_id"))
 			f.parseModes = append(f.parseModes, r.FormValue("parse_mode"))
 			f.lastMessageID++
 			id := f.lastMessageID
@@ -139,6 +141,25 @@ func (f *fakeTelegram) newBot(t *testing.T) *tgbot.Bot {
 		t.Fatalf("failed to create test bot: %v", err)
 	}
 	return api
+}
+
+// sentChats returns the chat of each message sent, in order.
+func (f *fakeTelegram) sentChats() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.chats...)
+}
+
+// waitForSent waits until n messages have been sent.
+func (f *fakeTelegram) waitForSent(t *testing.T, n int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for len(f.sentTexts()) < n {
+		if time.Now().After(deadline) {
+			t.Fatalf("waited for %d messages, %d were sent: %q", n, len(f.sentTexts()), f.sentTexts())
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 // sentParseModes returns the parse mode of each message sent, in order.
@@ -198,10 +219,15 @@ func newTestBot(t *testing.T, api *tgbot.Bot, client *transmission.TransmissionC
 
 // message is a text message from user 12345 in chat 42.
 func message(text string) *models.Update {
+	return messageIn(42, text)
+}
+
+// messageIn is a text message from user 12345 in chatID.
+func messageIn(chatID int64, text string) *models.Update {
 	return &models.Update{Message: &models.Message{
 		ID:   1,
 		Text: text,
 		From: &models.User{ID: 12345},
-		Chat: models.Chat{ID: 42, Type: models.ChatTypeSupergroup},
+		Chat: models.Chat{ID: chatID, Type: models.ChatTypeSupergroup},
 	}}
 }

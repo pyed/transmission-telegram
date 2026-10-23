@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -35,7 +36,20 @@ type Bot struct {
 	// retryDelay is the first wait before a failed Telegram request is
 	// tried again; a second when zero. Tests shorten it.
 	retryDelay time.Duration
+	// typingDelay is how long a message's handling takes before the chat
+	// shows the bot typing; a second when zero.
+	typingDelay time.Duration
+
+	// queues holds each master chat's updates waiting to be handled.
+	queuesMu sync.Mutex
+	queues   map[int64]chan *models.Update
+	// wg counts the background work Start waits for at shutdown: chat
+	// queues, live views, typing indicators.
+	wg sync.WaitGroup
 }
+
+// chatQueueSize is how many updates of one chat may wait for its handler.
+const chatQueueSize = 64
 
 // request is a command to carry out: the chat it came from, its arguments,
 // and the message that carried it.
@@ -88,8 +102,12 @@ func New(ctx context.Context, cfg *config.Config, client *transmission.Transmiss
 	b.registerCommands()
 
 	opts := []tgbot.Option{
-		tgbot.WithDefaultHandler(b.handleUpdate),
+		// The library hands updates to dispatch one at a time, in order;
+		// dispatch queues them per chat and returns at once.
+		tgbot.WithNotAsyncHandlers(),
+		tgbot.WithDefaultHandler(b.dispatch),
 		tgbot.WithMiddlewares(b.recoverMiddleware),
+		tgbot.WithAllowedUpdates(tgbot.AllowedUpdates{models.AllowedUpdateMessage, models.AllowedUpdateCallbackQuery}),
 		tgbot.WithErrorsHandler(func(err error) {
 			logger.Error("Telegram API error", "error", err)
 		}),
@@ -182,6 +200,112 @@ func clearWebhook(ctx context.Context, api *tgbot.Bot) error {
 // Start starts the bot polling loop (blocks until context is cancelled).
 func (b *Bot) Start(ctx context.Context) {
 	b.API.Start(ctx)
+	b.wg.Wait()
+}
+
+// dispatch passes an update to its chat's queue, so that chats are handled
+// side by side and each chat's updates in order: a command waiting for a
+// busy Transmission holds up only its own chat, and /stop then /start never
+// run the other way round. Updates from anyone but the masters are handled
+// at once and make no queue.
+func (b *Bot) dispatch(ctx context.Context, _ *tgbot.Bot, update *models.Update) {
+	chatID, from := updateOrigin(update)
+	if from == nil || !b.Config.Masters.Contains(from.Username, from.ID) {
+		b.handleUpdate(ctx, nil, update)
+		return
+	}
+	b.queuesMu.Lock()
+	queue, ok := b.queues[chatID]
+	if !ok {
+		if b.queues == nil {
+			b.queues = make(map[int64]chan *models.Update)
+		}
+		queue = make(chan *models.Update, chatQueueSize)
+		b.queues[chatID] = queue
+		b.launch(ctx, "chat queue", func(ctx context.Context) { b.serveChat(ctx, queue) })
+	}
+	b.queuesMu.Unlock()
+	select {
+	case queue <- update:
+	case <-ctx.Done():
+	}
+}
+
+// serveChat handles a chat's updates one at a time until ctx ends.
+func (b *Bot) serveChat(ctx context.Context, queue <-chan *models.Update) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case update := <-queue:
+			b.serveUpdate(ctx, update)
+		}
+	}
+}
+
+// serveUpdate handles one update from a chat's queue. When a message takes
+// a while, the chat shows the bot typing. A panic is logged, and the chat's
+// queue goes on.
+func (b *Bot) serveUpdate(ctx context.Context, update *models.Update) {
+	defer b.recoverPanic("chat update", "update_id", update.ID)
+	if update.Message != nil {
+		handled := make(chan struct{})
+		defer close(handled)
+		chatID := update.Message.Chat.ID
+		b.launch(ctx, "typing indicator", func(ctx context.Context) {
+			delay := b.typingDelay
+			if delay <= 0 {
+				delay = time.Second
+			}
+			timer := time.NewTimer(delay)
+			defer timer.Stop()
+			select {
+			case <-handled:
+			case <-ctx.Done():
+			case <-timer.C:
+				_, _ = b.API.SendChatAction(ctx, &tgbot.SendChatActionParams{ChatID: chatID, Action: models.ChatActionTyping})
+			}
+		})
+	}
+	b.handleUpdate(ctx, nil, update)
+}
+
+// updateOrigin returns the chat an update comes from, and who sent it.
+func updateOrigin(update *models.Update) (int64, *models.User) {
+	switch {
+	case update == nil:
+	case update.Message != nil:
+		return update.Message.Chat.ID, update.Message.From
+	case update.CallbackQuery != nil:
+		from := &update.CallbackQuery.From
+		switch message := update.CallbackQuery.Message; {
+		case message.Message != nil:
+			return message.Message.Chat.ID, from
+		case message.InaccessibleMessage != nil:
+			return message.InaccessibleMessage.Chat.ID, from
+		}
+		return from.ID, from
+	}
+	return 0, nil
+}
+
+// launch runs fn in the background; Start waits for it at shutdown. A
+// panic in fn is logged rather than ending the bot.
+func (b *Bot) launch(ctx context.Context, operation string, fn func(context.Context)) {
+	b.wg.Add(1)
+	go func() {
+		defer b.wg.Done()
+		defer b.recoverPanic(operation)
+		fn(ctx)
+	}()
+}
+
+// recoverPanic, deferred, logs a panic and stops it there.
+func (b *Bot) recoverPanic(operation string, attrs ...any) {
+	if recovered := recover(); recovered != nil {
+		b.Logger.Error("Recovered from a panic",
+			append([]any{"operation", operation, "panic", recovered, "stack", string(debug.Stack())}, attrs...)...)
+	}
 }
 
 // normalizeCommand processes the raw first token of a message:
@@ -304,21 +428,6 @@ func (b *Bot) recoverMiddleware(next tgbot.HandlerFunc) tgbot.HandlerFunc {
 		}()
 		next(ctx, api, update)
 	}
-}
-
-func (b *Bot) goSafe(operation string, fn func()) {
-	go func() {
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				b.Logger.Error("Recovered from background task panic",
-					"operation", operation,
-					"panic", recovered,
-					"stack", string(debug.Stack()),
-				)
-			}
-		}()
-		fn()
-	}()
 }
 
 // handleCallbackQuery processes button clicks from inline keyboards.
