@@ -11,6 +11,11 @@ README how to upgrade when one is.
 
 ## Layout
 
+The module is `github.com/pyed/transmission-telegram/v2` (the `/v2` suffix is
+what makes the v2 tags installable), with the main package at the root, so
+`go install github.com/pyed/transmission-telegram/v2@latest` builds a binary
+named `transmission-telegram`.
+
 | Path | What it holds |
 |---|---|
 | `main.go` | Entry point: config, logger, Transmission client, bot, completion watcher; `safeEndpoint` keeps credentials out of logged URLs |
@@ -101,7 +106,17 @@ before piping test output into `tail` or `grep`, or a failure can hide.
   explains the problem and the change. End with the `Co-Authored-By` trailer the
   system provides.
 - Pushing a `v*` tag runs `.github/workflows/release.yml`: it verifies the
-  commit, then builds archives for 11 platforms with checksums and publishes a
-  GitHub release. Never re-create a pushed tag; bump the patch version instead.
+  commit, builds archives for 11 platforms with checksums, publishes a GitHub
+  release, and then pushes a five-platform image to
+  `ghcr.io/pyed/transmission-telegram` (tags `X.Y.Z`, `X.Y`, `vX.Y.Z`,
+  `latest`). CI builds the same five platforms on every push. Never re-create a
+  pushed tag; bump the patch version instead.
+- Go versions: `go.mod` says `go 1.26.0` with `toolchain go1.26.10`; CI tests
+  Go 1.26.10 and 1.27.3, and releases and the Docker build use 1.27.3. When
+  govulncheck reports a fixed standard-library vulnerability, move the
+  toolchain line, the CI matrix, `release.yml`, and the Dockerfile's `golang`
+  image together.
+- The Dockerfile's runtime stage must stay free of `RUN` steps, so buildx can
+  build every platform without emulation.
 - Dependabot opens monthly grouped updates for Go modules, Actions, and the
   Docker base images.
