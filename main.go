@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/url"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/pyed/transmission"
 	"github.com/pyed/transmission-telegram/v2/internal/bot"
 	"github.com/pyed/transmission-telegram/v2/internal/config"
+	"github.com/pyed/transmission-telegram/v2/internal/logfile"
 	"github.com/pyed/transmission-telegram/v2/internal/notify"
 )
 
@@ -25,9 +27,9 @@ func main() {
 	defer cancel()
 
 	// Setup structured logger
-	var logOutput *os.File = os.Stdout
+	var logOutput io.Writer = os.Stdout
 	if cfg.LogFile != "" {
-		logf, err := os.OpenFile(cfg.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		logf, err := logfile.Open(cfg.LogFile, logfile.MaxSize)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[ERROR] Open logfile: %s\n", err)
 			os.Exit(1)
