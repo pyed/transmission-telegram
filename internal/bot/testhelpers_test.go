@@ -34,6 +34,7 @@ type fakeTelegram struct {
 	callbackTexts   []string
 	markupEditCalls int
 	textEditCalls   int
+	edits           [][2]string // message ID and text of each text edit
 	fileBytes       []byte
 	lastMessageID   int
 
@@ -116,6 +117,7 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 		case "editMessageText":
 			f.mu.Lock()
 			f.textEditCalls++
+			f.edits = append(f.edits, [2]string{r.FormValue("message_id"), r.FormValue("text")})
 			f.mu.Unlock()
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1,"date":1,"chat":{"id":42,"type":"private"}}}`))
 		case "getFile":
@@ -141,6 +143,19 @@ func (f *fakeTelegram) newBot(t *testing.T) *tgbot.Bot {
 		t.Fatalf("failed to create test bot: %v", err)
 	}
 	return api
+}
+
+// editsOf returns the texts messageID was edited to, in order.
+func (f *fakeTelegram) editsOf(messageID string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var texts []string
+	for _, edit := range f.edits {
+		if edit[0] == messageID {
+			texts = append(texts, edit[1])
+		}
+	}
+	return texts
 }
 
 // sentChats returns the chat of each message sent, in order.

@@ -33,18 +33,16 @@ func (b *Bot) info(ctx context.Context, r *request) {
 		messageID, _ := b.send(ctx, r.chatID, torrentCard(torrent, true), keyboard)
 
 		// Keep the card live for 'duration * interval'.
-		b.launch(ctx, "live torrent card", func(ctx context.Context) {
-			card := func(live bool) func() string {
-				return func() string {
-					torrent, err := b.Client.GetTorrent(torrentID, ctx)
-					if err != nil {
-						return "" // skip this update
-					}
-					return torrentCard(torrent, live)
+		card := func(live bool) func() string {
+			return func() string {
+				torrent, err := b.Client.GetTorrent(torrentID, ctx)
+				if err != nil {
+					return "" // skip this update
 				}
+				return torrentCard(torrent, live)
 			}
-			b.liveUpdateWithKeyboard(ctx, r.chatID, messageID, card(true), card(false), keyboard)
-		})
+		}
+		b.startLive(ctx, r.chatID, messageID, "torrent card", card(true), card(false), keyboard)
 	}
 }
 

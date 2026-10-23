@@ -46,6 +46,10 @@ type Bot struct {
 	// wg counts the background work Start waits for at shutdown: chat
 	// queues, live views, typing indicators.
 	wg sync.WaitGroup
+
+	// liveViews holds each chat's live view, if it has one.
+	liveMu    sync.Mutex
+	liveViews map[int64]*liveView
 }
 
 // chatQueueSize is how many updates of one chat may wait for its handler.

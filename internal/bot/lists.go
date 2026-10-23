@@ -220,13 +220,14 @@ func (b *Bot) replyLines(ctx context.Context, r *request, torrents transmission.
 	b.reply(ctx, r, strings.Join(lines, "\n"))
 }
 
-// torrentBlocks shows torrents a block each, with a blank line between.
+// torrentBlocks shows torrents a block each, with a blank line between, as
+// many as fit one message.
 func torrentBlocks(torrents transmission.Torrents, live bool) string {
 	blocks := make([]string, len(torrents))
 	for i, t := range torrents {
 		blocks[i] = torrentBlock(t, live)
 	}
-	return strings.Join(blocks, "\n\n")
+	return fitBlocks(blocks, "\n\n")
 }
 
 // replyLive replies with what render shows and keeps the reply up to date
@@ -243,13 +244,11 @@ func (b *Bot) replyLive(ctx context.Context, r *request, name, none string, rend
 		return
 	}
 	messageID := b.reply(ctx, r, text)
-	b.launch(ctx, "live "+name, func(ctx context.Context) {
-		b.liveUpdate(ctx, r.chatID, messageID, func() string {
-			text, _ := render(true)
-			return text
-		}, func() string {
-			text, _ := render(false)
-			return text
-		})
-	})
+	b.startLive(ctx, r.chatID, messageID, name, func() string {
+		text, _ := render(true)
+		return text
+	}, func() string {
+		text, _ := render(false)
+		return text
+	}, nil)
 }
