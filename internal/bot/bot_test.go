@@ -3,6 +3,7 @@ package bot
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -156,6 +158,75 @@ func TestCommandsForOtherBotsAreIgnored(t *testing.T) {
 	if got := fts.methodCount("torrent-stop"); got != 2 {
 		t.Fatalf("expected both of this bot's commands to stop torrents, got %d calls", got)
 	}
+}
+
+// A bot that starts before the network is up, as at boot, waits for
+// Telegram instead of exiting: server errors and pages that are not
+// Telegram's JSON are retried.
+func TestNewWaitsForTelegram(t *testing.T) {
+	shortenStartupDelay(t)
+	ft := newFakeTelegram(t)
+	ft.getMeAnswers = []string{
+		`{"ok":false,"error_code":502,"description":"Bad Gateway"}`,
+		`<html>502 Bad Gateway</html>`,
+	}
+	cfg := &config.Config{BotToken: testBotToken}
+	if _, err := New(context.Background(), cfg, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), tgbot.WithServerURL(ft.URL)); err != nil {
+		t.Fatalf("New gave up on a passing failure: %v", err)
+	}
+	if got := ft.getMes(); got != 3 {
+		t.Fatalf("expected two failed getMe calls and a third that worked, got %d calls", got)
+	}
+}
+
+// A token Telegram refuses cannot start working by itself, so New stops at
+// once and says what to check.
+func TestNewStopsWhenTelegramRefusesTheToken(t *testing.T) {
+	shortenStartupDelay(t)
+	ft := newFakeTelegram(t)
+	ft.getMeAnswers = []string{`{"ok":false,"error_code":401,"description":"Unauthorized"}`}
+	cfg := &config.Config{BotToken: testBotToken}
+	_, err := New(context.Background(), cfg, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), tgbot.WithServerURL(ft.URL))
+	if err == nil || !strings.Contains(err.Error(), "refused the bot token") {
+		t.Fatalf("expected a refused-token error, got %v", err)
+	}
+	if got := ft.getMes(); got != 1 {
+		t.Fatalf("retried a refused token: %d getMe calls", got)
+	}
+}
+
+// Shutting down while Telegram is unreachable ends the wait.
+func TestNewStopsWaitingWhenCanceled(t *testing.T) {
+	ft := newFakeTelegram(t)
+	ft.getMeAnswers = []string{`{"ok":false,"error_code":502,"description":"Bad Gateway"}`}
+	ctx, cancel := context.WithCancel(context.Background())
+	restore := startupDelay
+	startupDelay = func(int) time.Duration {
+		cancel()
+		return time.Hour
+	}
+	t.Cleanup(func() { startupDelay = restore })
+	cfg := &config.Config{BotToken: testBotToken}
+	done := make(chan error, 1)
+	go func() {
+		_, err := New(ctx, cfg, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), tgbot.WithServerURL(ft.URL))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected the cancellation, got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("New kept waiting after shutdown")
+	}
+}
+
+func shortenStartupDelay(t *testing.T) {
+	t.Helper()
+	restore := startupDelay
+	startupDelay = func(int) time.Duration { return time.Millisecond }
+	t.Cleanup(func() { startupDelay = restore })
 }
 
 // New asks Telegram who the bot is once and keeps its username, which the

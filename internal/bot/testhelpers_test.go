@@ -30,6 +30,17 @@ type fakeTelegram struct {
 	markupEditCalls int
 	textEditCalls   int
 	fileBytes       []byte
+
+	// getMeAnswers are bodies for the next getMe calls, in order, before
+	// the bot's real identity; getMeCalls counts the calls.
+	getMeAnswers []string
+	getMeCalls   int
+}
+
+func (f *fakeTelegram) getMes() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.getMeCalls
 }
 
 // newFakeTelegram starts a fake Telegram Bot API server.
@@ -68,7 +79,17 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 		case strings.HasSuffix(r.URL.Path, "/getFile"):
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"file_id":"test-file-id","file_path":"bots/123456/upload.torrent"}}`))
 		case strings.HasSuffix(r.URL.Path, "/getMe"):
-			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":123456,"is_bot":true,"first_name":"Transmission","username":"` + testBotUsername + `"}}`))
+			f.mu.Lock()
+			f.getMeCalls++
+			var answer string
+			if len(f.getMeAnswers) > 0 {
+				answer, f.getMeAnswers = f.getMeAnswers[0], f.getMeAnswers[1:]
+			}
+			f.mu.Unlock()
+			if answer == "" {
+				answer = `{"ok":true,"result":{"id":123456,"is_bot":true,"first_name":"Transmission","username":"` + testBotUsername + `"}}`
+			}
+			_, _ = w.Write([]byte(answer))
 		case strings.HasSuffix(r.URL.Path, "/getWebhookInfo"):
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"url":"","has_custom_certificate":false,"pending_update_count":0}}`))
 		default:

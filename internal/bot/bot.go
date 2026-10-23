@@ -2,12 +2,14 @@ package bot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -75,14 +77,19 @@ func New(ctx context.Context, cfg *config.Config, client *transmission.Transmiss
 	}
 	b.API = api
 
-	me, err := api.GetMe(ctx)
+	me, err := retryStartup(ctx, logger, "getMe", api.GetMe)
+	if permanentStartupError(err) {
+		return nil, fmt.Errorf("telegram refused the bot token; check -token or TT_BOT_TOKEN with @BotFather: %w", err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("get the bot's identity from Telegram: %w", err)
 	}
 	b.username = me.Username
 	logger.Info("Telegram bot authorized", "username", me.Username)
 
-	if err := clearWebhook(ctx, api); err != nil {
+	if _, err := retryStartup(ctx, logger, "clear webhook", func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, clearWebhook(ctx, api)
+	}); err != nil {
 		return nil, err
 	}
 
@@ -94,6 +101,41 @@ func New(ctx context.Context, cfg *config.Config, client *transmission.Transmiss
 	}
 
 	return b, nil
+}
+
+// startupDelay is how long New waits after its n-th failed call to Telegram,
+// counting from 0: a second, doubling up to a minute. Tests shorten it.
+var startupDelay = func(attempt int) time.Duration {
+	if attempt >= 6 {
+		return time.Minute
+	}
+	return time.Second << attempt
+}
+
+// retryStartup calls fn until it succeeds, Telegram refuses the token, or ctx
+// ends, so a bot that starts before the network is up, as at boot, waits for
+// Telegram instead of exiting.
+func retryStartup[T any](ctx context.Context, logger *slog.Logger, step string, fn func(context.Context) (T, error)) (T, error) {
+	for attempt := 0; ; attempt++ {
+		result, err := fn(ctx)
+		if err == nil || permanentStartupError(err) || ctx.Err() != nil {
+			return result, err
+		}
+		delay := startupDelay(attempt)
+		logger.Warn("Telegram did not answer; retrying", "step", step, "error", err, "retry_in", delay)
+		select {
+		case <-ctx.Done():
+			return result, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+}
+
+// permanentStartupError reports the errors that retrying cannot fix:
+// Telegram answers 401 for a wrong or revoked token and 404 for a malformed
+// one.
+func permanentStartupError(err error) bool {
+	return errors.Is(err, tgbot.ErrorUnauthorized) || errors.Is(err, tgbot.ErrorNotFound)
 }
 
 func clearWebhook(ctx context.Context, api *tgbot.Bot) error {
