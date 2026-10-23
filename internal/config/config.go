@@ -98,6 +98,19 @@ func (masters MasterSlice) Contains(username string, userID int64) bool {
 	return false
 }
 
+// Usernames returns the masters given by username rather than numeric user
+// ID. Telegram usernames can be changed and then claimed by someone else,
+// who would then control the bot.
+func (masters MasterSlice) Usernames() []string {
+	var usernames []string
+	for _, master := range masters {
+		if id, err := strconv.ParseInt(master, 10, 64); err != nil || id <= 0 {
+			usernames = append(usernames, master)
+		}
+	}
+	return usernames
+}
+
 // defaultRPCURL is where Transmission answers RPC out of the box.
 const defaultRPCURL = "http://localhost:9091/transmission/rpc"
 

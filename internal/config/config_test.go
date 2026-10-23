@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"flag"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -60,6 +61,16 @@ func TestMasterSlice(t *testing.T) {
 	str := masters.String()
 	if !strings.Contains(str, "sheriff") || !strings.Contains(str, "@pyed") || !strings.Contains(str, "987654321") {
 		t.Errorf("unexpected String output: %s", str)
+	}
+}
+
+func TestMasterSliceUsernames(t *testing.T) {
+	masters := MasterSlice{"alice", "12345", "bob_99", "987654321"}
+	if got := masters.Usernames(); !reflect.DeepEqual(got, []string{"alice", "bob_99"}) {
+		t.Fatalf("Usernames() = %v, want [alice bob_99]", got)
+	}
+	if got := (MasterSlice{"12345"}).Usernames(); got != nil {
+		t.Fatalf("numeric IDs reported as usernames: %v", got)
 	}
 }
 

@@ -47,6 +47,11 @@ func main() {
 		"master_count", len(cfg.Masters),
 		"rpc_endpoint", safeEndpoint(cfg.RPCURL),
 	)
+	if usernames := cfg.Masters.Usernames(); len(usernames) > 0 {
+		logger.Warn("Some masters are given by username. A username its owner gives up can be claimed by someone else, "+
+			"who would then control this bot; use numeric user IDs instead (the log shows each sender's user_id)",
+			"usernames", usernames)
+	}
 
 	// Initialize Transmission client
 	client, err := transmission.New(cfg.RPCURL, cfg.Username, cfg.Password)
