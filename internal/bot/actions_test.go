@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -51,7 +52,12 @@ func newFakeTransmission(t *testing.T) *fakeTransmission {
 	f.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var req struct {
-			Method string `json:"method"`
+			Method    string `json:"method"`
+			Arguments struct {
+				// IDs is a list of torrent IDs, "recently-active", or
+				// absent for every torrent.
+				IDs json.RawMessage `json:"ids"`
+			} `json:"arguments"`
 		}
 		_ = json.Unmarshal(body, &req)
 		f.mu.Lock()
@@ -88,6 +94,16 @@ func newFakeTransmission(t *testing.T) *fakeTransmission {
 			f.mu.Lock()
 			torrents := append(transmission.Torrents(nil), f.torrents...)
 			f.mu.Unlock()
+			var ids []int
+			if json.Unmarshal(req.Arguments.IDs, &ids) == nil && ids != nil {
+				var asked transmission.Torrents
+				for _, t := range torrents {
+					if slices.Contains(ids, t.ID) {
+						asked = append(asked, t)
+					}
+				}
+				torrents = asked
+			}
 			_ = json.NewEncoder(w).Encode(struct {
 				Result    string `json:"result"`
 				Arguments struct {
@@ -194,6 +210,45 @@ func TestAddHonorsCanceledContext(t *testing.T) {
 
 	if got := fts.methodCount("torrent-add"); got != 0 {
 		t.Fatalf("canceled command issued %d torrent-add RPC calls", got)
+	}
+}
+
+// Several IDs make one request and one reply, which names the torrents and
+// the arguments that name none; "all" works in any case.
+func TestActionsOnSeveralTorrents(t *testing.T) {
+	ft := newFakeTelegram(t)
+	fts := newFakeTransmission(t)
+	fts.torrents = transmission.Torrents{{ID: 1, Name: "One <1>"}, {ID: 2, Name: "Two"}}
+	client, err := transmission.New(fts.URL+"/transmission/rpc", "", "")
+	if err != nil {
+		t.Fatalf("failed to create transmission client: %v", err)
+	}
+	b := newTestBot(t, ft.newBot(t), client)
+	ctx := context.Background()
+
+	b.stop(ctx, req("1", "x", "2", "9", "1"))
+	b.start(ctx, req("ALL"))
+	b.del(ctx, req("2"))
+	b.check(ctx, req("9"))
+
+	for method, want := range map[string][]string{
+		"torrent-stop":   {`{"method":"torrent-stop","arguments":{"ids":[1,2]}}`},
+		"torrent-start":  {`{"method":"torrent-start"}`},
+		"torrent-remove": {`{"method":"torrent-remove","arguments":{"ids":[2],"delete-local-data":false}}`},
+		"torrent-verify": nil,
+	} {
+		if got := fts.requestBodies(method); !slices.Equal(got, want) {
+			t.Errorf("%s requests = %q, want %q", method, got, want)
+		}
+	}
+	want := []string{
+		"<b>Stopped:</b>\n<code>1</code> One &lt;1&gt;\n<code>2</code> Two\n⚠️ x is not a torrent ID\n⚠️ No torrent has the ID 9",
+		"<b>Started:</b> all torrents",
+		"<b>Deleted:</b>\n<code>2</code> Two",
+		"⚠️ No torrent has the ID 9",
+	}
+	if texts := ft.sentTexts(); !slices.Equal(texts, want) {
+		t.Fatalf("replies = %q\nwant %q", texts, want)
 	}
 }
 

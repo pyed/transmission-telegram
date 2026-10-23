@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -166,40 +167,33 @@ func (b *Bot) deldata(ctx context.Context, r *request) {
 	b.remove(ctx, r, "deldata", true)
 }
 
+// remove removes the torrents named by ID, with their data or not, and
+// replies once.
 func (b *Bot) remove(ctx context.Context, r *request, name string, deleteData bool) {
 	if len(r.args) == 0 {
 		b.reply(ctx, r, "<b>"+name+":</b> needs an ID")
 		return
 	}
-
-	for _, id := range r.args {
-		num, err := strconv.Atoi(id)
-		if err != nil {
-			b.reply(ctx, r, "<b>"+name+":</b> "+esc(id)+" is not an ID")
-			continue
-		}
-
-		torrent, err := b.Client.GetTorrent(num, ctx)
-		if err != nil {
+	torrents, problems, ok := b.torrentsNamed(ctx, r, name)
+	if !ok {
+		return
+	}
+	if len(torrents) > 0 {
+		if err := b.Client.RemoveTorrents(ctx, deleteData, torrents.GetIDs()...); err != nil {
 			b.replyError(ctx, r, name, err)
-			continue
-		}
-		if err := b.Client.RemoveTorrents(ctx, deleteData, num); err != nil {
-			b.replyError(ctx, r, name, err)
-			continue
-		}
-
-		if deleteData {
-			b.reply(ctx, r, "<b>Deleted with data:</b> "+esc(torrent.Name))
-		} else {
-			b.reply(ctx, r, "<b>Deleted:</b> "+esc(torrent.Name))
+			return
 		}
 	}
+	done := "Deleted"
+	if deleteData {
+		done = "Deleted with data"
+	}
+	b.reply(ctx, r, summary(done, torrents, problems))
 }
 
 // stop stops torrents, or all of them.
 func (b *Bot) stop(ctx context.Context, r *request) {
-	b.act(ctx, r, "stop", b.Client.StopAll, b.Client.StopTorrents, "Stopped all torrents")
+	b.act(ctx, r, "stop", b.Client.StopAll, b.Client.StopTorrents, "Stopped")
 }
 
 // start starts torrents, or all of them. Telegram sends a bare /start when
@@ -210,49 +204,94 @@ func (b *Bot) start(ctx context.Context, r *request) {
 			"or use a command:\n\n"+helpText())
 		return
 	}
-	b.act(ctx, r, "start", b.Client.StartAll, b.Client.StartTorrents, "Started all torrents")
+	b.act(ctx, r, "start", b.Client.StartAll, b.Client.StartTorrents, "Started")
 }
 
 // check verifies torrents, or all of them.
 func (b *Bot) check(ctx context.Context, r *request) {
-	b.act(ctx, r, "check", b.Client.VerifyAll, b.Client.VerifyTorrents, "Verifying all torrents")
+	b.act(ctx, r, "check", b.Client.VerifyAll, b.Client.VerifyTorrents, "Verifying")
 }
 
-// act runs one of stop, start and check on the IDs given, or on every
-// torrent for "all".
+// act runs one of stop, start and check on the torrents named by ID, in one
+// request, or on every torrent for "all", in any case, and replies once.
 func (b *Bot) act(ctx context.Context, r *request, name string,
-	all func(...context.Context) error, some func(context.Context, ...int) error, doneAll string) {
+	all func(...context.Context) error, some func(context.Context, ...int) error, done string) {
 	if len(r.args) == 0 {
 		b.reply(ctx, r, "<b>"+name+":</b> needs an argument")
 		return
 	}
 
-	if r.args[0] == "all" {
+	if strings.EqualFold(r.args[0], "all") {
 		if err := all(ctx); err != nil {
-			b.reply(ctx, r, "<b>"+name+":</b> error occurred while doing it for some torrents")
+			b.replyError(ctx, r, name, err)
 			return
 		}
-		b.reply(ctx, r, doneAll)
+		b.reply(ctx, r, "<b>"+done+":</b> all torrents")
 		return
 	}
 
-	for _, id := range r.args {
-		num, err := strconv.Atoi(id)
-		if err != nil {
-			b.reply(ctx, r, "<b>"+name+":</b> "+esc(id)+" is not a number")
-			continue
-		}
-		torrent, err := b.Client.GetTorrent(num, ctx)
-		if err != nil {
-			b.reply(ctx, r, fmt.Sprintf("<b>%s:</b> no torrent with an ID of %d", name, num))
-			continue
-		}
-		if err := some(ctx, num); err != nil {
-			b.replyError(ctx, r, name, err)
-			continue
-		}
-		b.reply(ctx, r, "<b>"+name+":</b> "+esc(torrent.Name))
+	torrents, problems, ok := b.torrentsNamed(ctx, r, name)
+	if !ok {
+		return
 	}
+	if len(torrents) > 0 {
+		if err := some(ctx, torrents.GetIDs()...); err != nil {
+			b.replyError(ctx, r, name, err)
+			return
+		}
+	}
+	b.reply(ctx, r, summary(done, torrents, problems))
+}
+
+// torrentsNamed finds, in one request, the torrents whose IDs the command
+// was given, in the order given, and describes the arguments that name
+// none. It replies itself, and returns false, when Transmission fails.
+func (b *Bot) torrentsNamed(ctx context.Context, r *request, name string) (transmission.Torrents, []string, bool) {
+	var ids []int
+	var problems []string
+	for _, arg := range r.args {
+		id, err := strconv.Atoi(arg)
+		switch {
+		case err != nil || id <= 0:
+			problems = append(problems, esc(arg)+" is not a torrent ID")
+		case !slices.Contains(ids, id):
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, problems, true
+	}
+	found, err := b.Client.GetTorrentsByIDs(ctx, ids, "id", "name")
+	if err != nil {
+		b.replyError(ctx, r, name, err)
+		return nil, nil, false
+	}
+	var torrents transmission.Torrents
+	for _, id := range ids {
+		index := slices.IndexFunc(found, func(t *transmission.Torrent) bool { return t.ID == id })
+		if index < 0 {
+			problems = append(problems, fmt.Sprintf("No torrent has the ID %d", id))
+			continue
+		}
+		torrents = append(torrents, found[index])
+	}
+	return torrents, problems, true
+}
+
+// summary replies to an action on torrents: which it was done to, and the
+// arguments that named none.
+func summary(done string, torrents transmission.Torrents, problems []string) string {
+	var lines []string
+	if len(torrents) > 0 {
+		lines = append(lines, "<b>"+done+":</b>")
+		for _, t := range torrents {
+			lines = append(lines, fmt.Sprintf("<code>%d</code> %s", t.ID, esc(t.Name)))
+		}
+	}
+	for _, problem := range problems {
+		lines = append(lines, "⚠️ "+problem)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // reannounce asks trackers for peers now, for torrents or all of them.
