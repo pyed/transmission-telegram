@@ -69,10 +69,24 @@ before piping test output into `tail` or `grep`, or a failure can hide.
   being the first 16 characters of the info-hash (`torrentFingerprint`), so an
   old button cannot act on a different torrent that reuses the ID. Destructive
   buttons ask for confirmation first.
+- Updates go through `dispatch`: the library hands them over one at a time
+  (`WithNotAsyncHandlers`), and each master chat gets a queue and a goroutine
+  of its own (`serveChat`), so a chat's commands run in order and chats run
+  side by side. Shared state needs a lock. Background work goes through
+  `b.launch`, which recovers panics and is counted in `b.wg` for shutdown;
+  never block a chat's goroutine for long (live views run in the background
+  through `startLive`, one per chat).
+- Actions on several torrents look them up in one request
+  (`torrentsNamed`), act in one more, and reply once (`summary`).
 - Tests drive handlers directly against in-process fakes: `newFakeTelegram`
-  (`internal/bot/testhelpers_test.go`) and `newFakeTransmission`
-  (`internal/bot/commands_manage_test.go`). Add a regression test with every
-  fix, and prove new tests can fail by breaking the code they guard.
+  (`internal/bot/testhelpers_test.go`: `script` scripts a method's answers,
+  `callCount`, `sentTexts`/`sentChats`/`sentParseModes`/`sentDocuments`,
+  `editsOf`, `waitForSent`) and `newFakeTransmission`
+  (`internal/bot/actions_test.go`: `torrents`, `session`, `stats`,
+  `addAnswer`, `stall`; `torrent-get` honours requested IDs). `req(args...)`
+  is a command in chat 42, `message`/`messageIn` an update from master 12345.
+  Add a regression test with every fix, and prove new tests can fail by
+  breaking the code they guard.
 - Timing-based tests use generous margins and run `-count=30` once before
   committing.
 
