@@ -160,13 +160,17 @@ func torrentCard(t *transmission.Torrent, live bool) string {
 		estimate = "–"
 	}
 	card := fmt.Sprintf("<code>%d</code> %s <b>%s</b>\n%s %s · %s · %s of %s\n%s · ratio %s\n"+
-		"Downloaded %s · Uploaded %s\nAdded %s · ETA %s\nTrackers: <code>%s</code>",
+		"Peers: %d, %d sending to us, %d getting from us · ETA %s\n"+
+		"Downloaded %s · Uploaded %s\nAdded %s\nFolder: <code>%s</code>\nTrackers: <code>%s</code>",
 		t.ID, statusIcon(t), esc(t.Name),
 		progressBar(t.PercentDone, 10), percent(t.PercentDone), esc(t.TorrentStatus()), size(t.Have()), size(t.SizeWhenDone),
 		speeds(t, live), ratio(t.UploadRatio),
-		size(t.DownloadedEver), size(t.UploadedEver),
-		date(t.AddedDate), estimate,
-		esc(trackers))
+		t.PeersConnected, t.PeersSendingToUs, t.PeersGettingFromUs, estimate,
+		size(t.DownloadedEver), size(t.UploadedEver), date(t.AddedDate),
+		esc(t.DownloadDir), esc(trackers))
+	if len(t.Labels) > 0 {
+		card += "\nLabels: " + esc(strings.Join(t.Labels, ", "))
+	}
 	if t.Error != transmission.ErrorNone && t.ErrorString != "" {
 		card += "\n⚠️ " + esc(t.ErrorString)
 	}

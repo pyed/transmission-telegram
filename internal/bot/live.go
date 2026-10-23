@@ -4,15 +4,24 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-telegram/bot/models"
 )
 
-// liveView is a message being kept up to date; closing stop ends it.
+// liveView is a message being kept up to date; closing stop ends it, with
+// a last edit unless quiet is set, and done is closed once it has ended.
 type liveView struct {
-	stop chan struct{}
+	messageID int
+	stop      chan struct{}
+	done      chan struct{}
+	quiet     atomic.Bool
 }
+
+// stopLiveWait bounds how long a press waits for a live view to end: one
+// that is waiting for Transmission may take a while.
+const stopLiveWait = 10 * time.Second
 
 // startLive keeps messageID up to date in the background: update gives its
 // text while it is live, and final its text once it no longer is. A chat
@@ -23,7 +32,7 @@ func (b *Bot) startLive(ctx context.Context, chatID int64, messageID int, name s
 	if b.Config.NoLive || messageID <= 0 || b.Config.Duration <= 0 {
 		return
 	}
-	view := &liveView{stop: make(chan struct{})}
+	view := &liveView{messageID: messageID, stop: make(chan struct{}), done: make(chan struct{})}
 	b.liveMu.Lock()
 	if b.liveViews == nil {
 		b.liveViews = make(map[int64]*liveView)
@@ -35,6 +44,7 @@ func (b *Bot) startLive(ctx context.Context, chatID int64, messageID int, name s
 	b.liveMu.Unlock()
 
 	b.launch(ctx, "live "+name, func(ctx context.Context) {
+		defer close(view.done)
 		defer func() {
 			b.liveMu.Lock()
 			if b.liveViews[chatID] == view {
@@ -42,8 +52,38 @@ func (b *Bot) startLive(ctx context.Context, chatID int64, messageID int, name s
 			}
 			b.liveMu.Unlock()
 		}()
-		b.liveUpdate(ctx, view.stop, chatID, messageID, update, final, markup)
+		last := func() string {
+			if view.quiet.Load() || final == nil {
+				return ""
+			}
+			return final()
+		}
+		b.liveUpdate(ctx, view.stop, chatID, messageID, update, last, markup)
 	})
+}
+
+// stopLive ends the live view of a chat's message, if it has one, without a
+// last edit: a button pressed under it shows something else there. It waits
+// for an edit the view has under way, which would otherwise land after what
+// the press shows.
+func (b *Bot) stopLive(chatID int64, messageID int) {
+	b.liveMu.Lock()
+	view := b.liveViews[chatID]
+	if view == nil || view.messageID != messageID {
+		b.liveMu.Unlock()
+		return
+	}
+	view.quiet.Store(true)
+	close(view.stop)
+	delete(b.liveViews, chatID)
+	b.liveMu.Unlock()
+
+	timer := time.NewTimer(stopLiveWait)
+	defer timer.Stop()
+	select {
+	case <-view.done:
+	case <-timer.C:
+	}
 }
 
 // liveUpdate edits a message every interval, Duration times, then once more
