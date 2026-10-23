@@ -11,7 +11,7 @@ import (
 // list lists every torrent, or with an argument only those with a tracker
 // whose announce URL contains it.
 func (b *Bot) list(ctx context.Context, r *request) {
-	torrents, err := b.Client.GetTorrents(ctx)
+	torrents, err := b.torrents(ctx, r.chatID)
 	if err != nil {
 		b.replyError(ctx, r, "list", err)
 		return
@@ -52,7 +52,7 @@ func (b *Bot) headTail(ctx context.Context, r *request, name string, fromEnd boo
 		return
 	}
 	render := func(live bool) (string, error) {
-		torrents, err := b.Client.GetTorrents(ctx)
+		torrents, err := b.torrents(ctx, r.chatID)
 		if err != nil {
 			return "", err
 		}
@@ -73,7 +73,7 @@ func (b *Bot) latest(ctx context.Context, r *request) {
 	if !ok {
 		return
 	}
-	torrents, err := b.Client.GetTorrents(ctx)
+	torrents, err := b.torrents(ctx, r.chatID)
 	if err != nil {
 		b.replyError(ctx, r, "latest", err)
 		return
@@ -89,7 +89,7 @@ func (b *Bot) search(ctx context.Context, r *request) {
 		return
 	}
 	query := strings.Join(r.args, " ")
-	torrents, err := b.Client.GetTorrents(ctx)
+	torrents, err := b.torrents(ctx, r.chatID)
 	if err != nil {
 		b.replyError(ctx, r, "search", err)
 		return
@@ -134,7 +134,7 @@ func (b *Bot) checking(ctx context.Context, r *request) {
 
 // errors lists the torrents with errors, each with its error.
 func (b *Bot) errors(ctx context.Context, r *request) {
-	torrents, err := b.Client.GetTorrents(ctx)
+	torrents, err := b.torrents(ctx, r.chatID)
 	if err != nil {
 		b.replyError(ctx, r, "errors", err)
 		return
@@ -155,7 +155,7 @@ func (b *Bot) errors(ctx context.Context, r *request) {
 // active shows the torrents transferring now, updating them live.
 func (b *Bot) active(ctx context.Context, r *request) {
 	b.replyLive(ctx, r, "active", "No active torrents", func(live bool) (string, error) {
-		torrents, err := b.Client.GetTorrents(ctx)
+		torrents, err := b.torrents(ctx, r.chatID)
 		if err != nil {
 			return "", err
 		}
@@ -186,7 +186,7 @@ func (b *Bot) countArgument(ctx context.Context, r *request, name string) (int, 
 // replyFiltered lists the torrents keep accepts, or says none when there
 // are none.
 func (b *Bot) replyFiltered(ctx context.Context, r *request, name, none string, keep func(*transmission.Torrent) bool) {
-	torrents, err := b.Client.GetTorrents(ctx)
+	torrents, err := b.torrents(ctx, r.chatID)
 	if err != nil {
 		b.replyError(ctx, r, name, err)
 		return

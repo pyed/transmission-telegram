@@ -8,27 +8,15 @@ import (
 	"strings"
 
 	"github.com/pyed/transmission"
+	"github.com/pyed/transmission-telegram/v2/internal/state"
 )
 
 // sortUsage is the usage message for the /sort command.
 const sortUsage = "<b>sort</b> takes one of: id, name, age, size, progress, downspeed, upspeed, download, upload, ratio\n" +
 	"Start with <b>rev</b> for the reverse order: <code>/sort rev size</code> lists the biggest torrents first."
 
-// sortings maps each /sort method to its order and the reverse.
-var sortings = map[string][2]transmission.Sorting{
-	"id":        {transmission.SortID, transmission.SortRevID},
-	"name":      {transmission.SortName, transmission.SortRevName},
-	"age":       {transmission.SortAge, transmission.SortRevAge},
-	"size":      {transmission.SortSize, transmission.SortRevSize},
-	"progress":  {transmission.SortProgress, transmission.SortRevProgress},
-	"downspeed": {transmission.SortDownSpeed, transmission.SortRevDownSpeed},
-	"upspeed":   {transmission.SortUpSpeed, transmission.SortRevUpSpeed},
-	"download":  {transmission.SortDownloaded, transmission.SortRevDownloaded},
-	"upload":    {transmission.SortUploaded, transmission.SortRevUploaded},
-	"ratio":     {transmission.SortRatio, transmission.SortRevRatio},
-}
-
-// sort changes the order lists show torrents in.
+// sort changes the order this chat's lists show torrents in; each chat has
+// its own, kept in the state file.
 func (b *Bot) sort(ctx context.Context, r *request) {
 	args := r.args
 	if len(args) == 0 {
@@ -49,18 +37,23 @@ func (b *Bot) sort(ctx context.Context, r *request) {
 	}
 
 	method := strings.ToLower(args[0])
-	orders, ok := sortings[method]
-	if !ok {
+	if _, ok := sortKeys[method]; !ok {
 		b.reply(ctx, r, "unknown sorting method")
 		return
 	}
+	order, shown := method, method
 	if reversed {
-		b.Client.SetSort(orders[1])
-		b.reply(ctx, r, "<b>sort:</b> reversed "+esc(method))
-		return
+		order, shown = "rev "+method, "reversed "+method
 	}
-	b.Client.SetSort(orders[0])
-	b.reply(ctx, r, "<b>sort:</b> "+esc(method))
+	if err := b.State.Update(func(data *state.Data) {
+		if data.Sorts == nil {
+			data.Sorts = make(map[int64]string)
+		}
+		data.Sorts[r.chatID] = order
+	}); err != nil {
+		b.Logger.Warn("Could not save the sort order; it lasts until the bot stops", "error", err)
+	}
+	b.reply(ctx, r, "<b>sort:</b> "+esc(shown))
 }
 
 // trackers lists the tracker hosts and how many torrents each has.

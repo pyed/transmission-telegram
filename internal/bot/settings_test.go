@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/pyed/transmission"
+	"github.com/pyed/transmission-telegram/v2/internal/state"
 )
 
 // req is a command with args from chat 42.
@@ -53,6 +54,48 @@ func TestSortRevSizeStillWorks(t *testing.T) {
 	if last := texts[len(texts)-1]; last != "<b>sort:</b> reversed size" {
 		t.Errorf("unexpected reply %q", last)
 	}
+}
+
+// Each chat has its own sort order, kept in the state file; ties go by ID,
+// so live lists keep still.
+func TestSortOrdersArePerChat(t *testing.T) {
+	ft := newFakeTelegram(t)
+	fts := newFakeTransmission(t)
+	fts.torrents = transmission.Torrents{
+		{ID: 1, Name: "small", SizeWhenDone: 10},
+		{ID: 2, Name: "big", SizeWhenDone: 30},
+		{ID: 3, Name: "medium", SizeWhenDone: 20},
+		{ID: 4, Name: "big too", SizeWhenDone: 30},
+	}
+	client, err := transmission.New(fts.URL+"/transmission/rpc", "", "")
+	if err != nil {
+		t.Fatalf("failed to create transmission client: %v", err)
+	}
+	b := newTestBot(t, ft.newBot(t), client)
+	ctx := context.Background()
+
+	b.sort(ctx, &request{chatID: 7, args: []string{"rev", "SIZE"}})
+	b.list(ctx, &request{chatID: 7})
+	b.list(ctx, &request{chatID: 8})
+	ids := func(text string) string {
+		var got []string
+		for _, line := range strings.Split(text, "\n") {
+			got = append(got, strings.TrimPrefix(strings.SplitN(line, "</code>", 2)[0], "<code>"))
+		}
+		return strings.Join(got, " ")
+	}
+	texts := ft.sentTexts()
+	if got := ids(texts[1]); got != "2 4 3 1" {
+		t.Errorf("chat 7, sorted by size reversed, lists %s", got)
+	}
+	if got := ids(texts[2]); got != "1 2 3 4" {
+		t.Errorf("chat 8, never sorted, lists %s", got)
+	}
+	b.State.Read(func(data *state.Data) {
+		if data.Sorts[7] != "rev size" || len(data.Sorts) != 1 {
+			t.Errorf("saved sorts = %v", data.Sorts)
+		}
+	})
 }
 
 func TestTrackersCountsDistinctTorrentsInStableOrder(t *testing.T) {
