@@ -30,6 +30,10 @@ LABEL org.opencontainers.image.source="https://github.com/pyed/transmission-tele
 COPY --from=build --chown=1000:1000 /rootfs/config /config
 COPY --from=build /transmission-telegram /transmission-telegram
 
+# What the bot remembers, such as where notifications go; mount a volume
+# at /config to keep it when the container is replaced.
+ENV TT_STATE=/config/state.json
+
 USER 1000:1000
 
 ENTRYPOINT ["/transmission-telegram"]

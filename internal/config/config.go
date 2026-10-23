@@ -83,6 +83,9 @@ type Config struct {
 	NoLive       bool
 	Interval     time.Duration
 	Duration     int
+	// StateFile is where the bot keeps what it remembers; the default
+	// location when empty.
+	StateFile string
 
 	// ShowVersion asks only for the version to be printed; nothing else
 	// is validated.
@@ -126,6 +129,7 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	fs.StringVar(&cfg.LogFile, "logfile", "", "Send logs to a private file, moved aside to FILE.1 at 10 MiB")
 	fs.StringVar(&cfg.TransLogFile, "transmission-logfile", "", "Deprecated and ignored: completion notifications come from Transmission's RPC")
 	fs.BoolVar(&cfg.NoLive, "no-live", false, "Don't edit and update info after sending")
+	fs.StringVar(&cfg.StateFile, "state", "", "File where the bot keeps settings such as where notifications go (env: TT_STATE; default: transmission-telegram/state.json in the user's config directory)")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "Print the version and exit")
 
 	if err := fs.Parse(args); err != nil {
@@ -145,6 +149,9 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	}
 	if rpcURL := strings.TrimSpace(getenv("TR_URL")); !given["url"] && rpcURL != "" {
 		cfg.RPCURL = rpcURL
+	}
+	if stateFile := strings.TrimSpace(getenv("TT_STATE")); !given["state"] && stateFile != "" {
+		cfg.StateFile = stateFile
 	}
 	if username, password, ok := strings.Cut(getenv("TR_AUTH"), ":"); ok {
 		if !given["username"] {

@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	tgbot "github.com/go-telegram/bot"
@@ -17,6 +16,7 @@ import (
 	"github.com/pyed/transmission"
 	"github.com/pyed/transmission-telegram/v2/internal/config"
 	"github.com/pyed/transmission-telegram/v2/internal/redact"
+	"github.com/pyed/transmission-telegram/v2/internal/state"
 )
 
 // Bot manages the Telegram bot and Transmission client interaction.
@@ -25,8 +25,9 @@ type Bot struct {
 	Client *transmission.TransmissionClient
 	Config *config.Config
 	Logger *slog.Logger
+	// State is what the bot remembers across restarts.
+	State *state.Store
 
-	chatID   int64 // accessed atomically for thread safety
 	commands map[string]commandFunc
 
 	// username is the bot's own Telegram username, without the @, from
@@ -90,7 +91,7 @@ func (b *Bot) Notify(ctx context.Context, chatID int64, text string) int {
 // New creates a new Bot instance and performs the Telegram startup calls.
 // Extra options are passed to the Telegram library; tests use them to point
 // the bot at a fake server.
-func New(ctx context.Context, cfg *config.Config, client *transmission.TransmissionClient, logger *slog.Logger, extra ...tgbot.Option) (*Bot, error) {
+func New(ctx context.Context, cfg *config.Config, client *transmission.TransmissionClient, store *state.Store, logger *slog.Logger, extra ...tgbot.Option) (*Bot, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -102,6 +103,7 @@ func New(ctx context.Context, cfg *config.Config, client *transmission.Transmiss
 		Client: client,
 		Config: cfg,
 		Logger: logger,
+		State:  store,
 	}
 	b.registerCommands()
 
@@ -372,8 +374,7 @@ func (b *Bot) handleUpdate(ctx context.Context, _ *tgbot.Bot, update *models.Upd
 		}
 	}
 
-	// Always store active chat ID for notifications
-	atomic.StoreInt64(&b.chatID, update.Message.Chat.ID)
+	b.rememberChat(update.Message.Chat.ID)
 
 	b.Logger.Info("Received message",
 		"sender", username,
@@ -565,7 +566,16 @@ func (b *Bot) editCallbackKeyboard(ctx context.Context, cb *models.CallbackQuery
 	return err
 }
 
-// ChatID returns the current chat ID atomically (used by the notify package).
-func (b *Bot) ChatID() int64 {
-	return atomic.LoadInt64(&b.chatID)
+// rememberChat records the chat a master used last, where notifications go
+// until a chat chooses its own. It is saved, so a restart does not lose it;
+// it is written only when it changes.
+func (b *Bot) rememberChat(chatID int64) {
+	var changed bool
+	b.State.Read(func(data *state.Data) { changed = data.LastChat != chatID })
+	if !changed {
+		return
+	}
+	if err := b.State.Update(func(data *state.Data) { data.LastChat = chatID }); err != nil {
+		b.Logger.Warn("Could not save the chat notifications go to", "error", err)
+	}
 }

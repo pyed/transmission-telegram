@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -17,17 +19,43 @@ import (
 	"github.com/go-telegram/bot/models"
 	"github.com/pyed/transmission"
 	"github.com/pyed/transmission-telegram/v2/internal/config"
+	"github.com/pyed/transmission-telegram/v2/internal/state"
 )
 
-func TestBot_ChatID(t *testing.T) {
-	b := &Bot{}
-	if b.ChatID() != 0 {
-		t.Errorf("expected initial ChatID to be 0")
+// The chat a master used last is saved, so notifications still reach it
+// after a restart, and written only when it changes.
+func TestTheLastChatIsSaved(t *testing.T) {
+	ft := newFakeTelegram(t)
+	b := newTestBot(t, ft.newBot(t), nil)
+	b.Config.Masters = config.MasterSlice{"12345"}
+	path := filepath.Join(t.TempDir(), "state.json")
+	store, err := state.Load(path)
+	if err != nil {
+		t.Fatal(err)
 	}
+	b.State = store
 
-	atomic.StoreInt64(&b.chatID, 123456789)
-	if b.ChatID() != 123456789 {
-		t.Errorf("expected ChatID to be 123456789, got %d", b.ChatID())
+	b.handleUpdate(context.Background(), nil, messageIn(111, "/help"))
+	first, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("the last chat was not saved: %v", err)
+	}
+	reloaded, err := state.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reloaded.Read(func(data *state.Data) {
+		if data.LastChat != 111 {
+			t.Fatalf("saved last chat = %d, want 111", data.LastChat)
+		}
+	})
+
+	if err := os.Chtimes(path, first.ModTime().Add(-time.Hour), first.ModTime().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	b.handleUpdate(context.Background(), nil, messageIn(111, "/help"))
+	if again, _ := os.Stat(path); !again.ModTime().Before(first.ModTime()) {
+		t.Fatal("the state was written again for the same chat")
 	}
 }
 
@@ -85,9 +113,11 @@ func TestCommandsForOtherBotsAreIgnored(t *testing.T) {
 	if texts := ft.sentTexts(); len(texts) != 0 {
 		t.Fatalf("answered another bot's command: %v", texts)
 	}
-	if got := b.ChatID(); got != 0 {
-		t.Fatalf("another bot's command moved notifications to chat %d", got)
-	}
+	b.State.Read(func(data *state.Data) {
+		if data.LastChat != 0 {
+			t.Fatalf("another bot's command moved notifications to chat %d", data.LastChat)
+		}
+	})
 
 	b.handleUpdate(context.Background(), nil, message("/stop@mytransmissionbot all"))
 	b.handleUpdate(context.Background(), nil, message("/stop all"))
@@ -107,7 +137,7 @@ func TestNewWaitsForTelegram(t *testing.T) {
 		`<html>502 Bad Gateway</html>`,
 	)
 	cfg := &config.Config{BotToken: testBotToken}
-	if _, err := New(context.Background(), cfg, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), tgbot.WithServerURL(ft.URL)); err != nil {
+	if _, err := New(context.Background(), cfg, nil, memoryState(t), slog.New(slog.NewTextHandler(io.Discard, nil)), tgbot.WithServerURL(ft.URL)); err != nil {
 		t.Fatalf("New gave up on a passing failure: %v", err)
 	}
 	if got := ft.callCount("getMe"); got != 3 {
@@ -122,7 +152,7 @@ func TestNewStopsWhenTelegramRefusesTheToken(t *testing.T) {
 	ft := newFakeTelegram(t)
 	ft.script("getMe", `{"ok":false,"error_code":401,"description":"Unauthorized"}`)
 	cfg := &config.Config{BotToken: testBotToken}
-	_, err := New(context.Background(), cfg, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), tgbot.WithServerURL(ft.URL))
+	_, err := New(context.Background(), cfg, nil, memoryState(t), slog.New(slog.NewTextHandler(io.Discard, nil)), tgbot.WithServerURL(ft.URL))
 	if err == nil || !strings.Contains(err.Error(), "refused the bot token") {
 		t.Fatalf("expected a refused-token error, got %v", err)
 	}
@@ -145,7 +175,7 @@ func TestNewStopsWaitingWhenCanceled(t *testing.T) {
 	cfg := &config.Config{BotToken: testBotToken}
 	done := make(chan error, 1)
 	go func() {
-		_, err := New(ctx, cfg, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), tgbot.WithServerURL(ft.URL))
+		_, err := New(ctx, cfg, nil, memoryState(t), slog.New(slog.NewTextHandler(io.Discard, nil)), tgbot.WithServerURL(ft.URL))
 		done <- err
 	}()
 	select {
@@ -170,7 +200,7 @@ func shortenStartupDelay(t *testing.T) {
 func TestNewKeepsTheBotUsername(t *testing.T) {
 	ft := newFakeTelegram(t)
 	cfg := &config.Config{BotToken: testBotToken, Masters: config.MasterSlice{"12345"}}
-	b, err := New(context.Background(), cfg, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), tgbot.WithServerURL(ft.URL))
+	b, err := New(context.Background(), cfg, nil, memoryState(t), slog.New(slog.NewTextHandler(io.Discard, nil)), tgbot.WithServerURL(ft.URL))
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}

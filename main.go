@@ -15,6 +15,7 @@ import (
 	"github.com/pyed/transmission-telegram/v2/internal/logfile"
 	"github.com/pyed/transmission-telegram/v2/internal/notify"
 	"github.com/pyed/transmission-telegram/v2/internal/redact"
+	"github.com/pyed/transmission-telegram/v2/internal/state"
 )
 
 func main() {
@@ -66,8 +67,10 @@ func main() {
 			"error", redact.Error(err))
 	}
 
+	store := loadState(cfg.StateFile, logger)
+
 	// Create bot instance
-	b, err := bot.New(ctx, cfg, client, logger)
+	b, err := bot.New(ctx, cfg, client, store, logger)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[ERROR] Telegram: %s\n", err)
 		os.Exit(1)
@@ -80,10 +83,40 @@ func main() {
 	}
 	notify.StartWatcher(ctx, cfg.Interval, func(reqCtx context.Context) (transmission.Torrents, error) {
 		return client.GetTorrents(reqCtx)
-	}, b.ChatID, func(text string, chatID int64, markdown bool) int {
+	}, func() int64 {
+		var chatID int64
+		store.Read(func(data *state.Data) { chatID = data.LastChat })
+		return chatID
+	}, func(text string, chatID int64, markdown bool) int {
 		return b.Notify(ctx, chatID, text)
 	}, logger)
 
 	// Run the bot (blocks until context is cancelled)
 	b.Start(ctx)
+}
+
+// loadState opens the state file: the one given, or the default one. Without
+// a place for it, or when it cannot be written, the bot still runs, keeping
+// its state in memory, and says so; a damaged file stops it, since starting
+// afresh would lose what the bot remembered.
+func loadState(path string, logger *slog.Logger) *state.Store {
+	if path == "" {
+		var err error
+		if path, err = state.DefaultPath(); err != nil {
+			logger.Warn("No directory for the state file, so what the bot remembers, such as where notifications go, "+
+				"lasts only until it stops; set -state or TT_STATE", "error", err)
+		}
+	}
+	store, err := state.Load(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "[ERROR]", err)
+		os.Exit(1)
+	}
+	if err := store.Update(func(*state.Data) {}); err != nil {
+		logger.Warn("Cannot save the state file, so what the bot remembers lasts only until it stops; "+
+			"make its directory writable or set -state or TT_STATE", "path", store.Path(), "error", err)
+	} else if store.Path() != "" {
+		logger.Info("Keeping state", "path", store.Path())
+	}
+	return store
 }

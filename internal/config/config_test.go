@@ -271,6 +271,26 @@ func TestParseFlags_RejectsURLsThatAreNotHTTP(t *testing.T) {
 	}
 }
 
+// The state file comes from -state, or else TT_STATE.
+func TestParseFlags_StateFile(t *testing.T) {
+	env := func(key string) string {
+		if key == "TT_STATE" {
+			return "/config/state.json"
+		}
+		return ""
+	}
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err := ParseFlags(fs, []string{"-token=t", "-master=12345"}, env)
+	if err != nil || cfg.StateFile != "/config/state.json" {
+		t.Fatalf("StateFile = %q, %v; want TT_STATE's", cfg.StateFile, err)
+	}
+	fs = flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err = ParseFlags(fs, []string{"-token=t", "-master=12345", "-state=/data/state.json"}, env)
+	if err != nil || cfg.StateFile != "/data/state.json" {
+		t.Fatalf("StateFile = %q, %v; want the flag's", cfg.StateFile, err)
+	}
+}
+
 // -transmission-logfile no longer does anything, but existing service
 // definitions pass it, so it must still parse.
 func TestParseFlags_AcceptsDeprecatedTransmissionLogfile(t *testing.T) {

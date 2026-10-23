@@ -15,6 +15,7 @@ import (
 	"github.com/go-telegram/bot/models"
 	"github.com/pyed/transmission"
 	"github.com/pyed/transmission-telegram/v2/internal/config"
+	"github.com/pyed/transmission-telegram/v2/internal/state"
 )
 
 // testBotToken is a fake token used only in tests; it is not a real secret.
@@ -227,11 +228,22 @@ func newTestBot(t *testing.T, api *tgbot.Bot, client *transmission.TransmissionC
 		Client: client,
 		Config: &config.Config{},
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		State:  memoryState(t),
 
 		retryDelay: time.Millisecond,
 	}
 	b.registerCommands()
 	return b
+}
+
+// memoryState is a state store kept in memory.
+func memoryState(t *testing.T) *state.Store {
+	t.Helper()
+	store, err := state.Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store
 }
 
 // message is a text message from user 12345 in chat 42.
