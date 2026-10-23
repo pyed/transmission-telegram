@@ -240,6 +240,18 @@ func TestParseFlags_PrefersStandardTokenEnvironment(t *testing.T) {
 	}
 }
 
+// -version must work before the bot is configured at all.
+func TestParseFlags_VersionNeedsNoOtherSettings(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err := ParseFlags(fs, []string{"-version"}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("-version alone failed: %v", err)
+	}
+	if !cfg.ShowVersion {
+		t.Fatal("-version did not ask for the version")
+	}
+}
+
 func TestParseFlags_RejectsEmptyMaster(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	_, err := ParseFlags(fs, []string{"-token=test-token", "-master=@"}, nil)

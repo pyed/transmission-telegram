@@ -17,6 +17,10 @@ import (
 
 func main() {
 	cfg := config.Parse()
+	if cfg.ShowVersion {
+		fmt.Println("transmission-telegram", config.Version)
+		return
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 

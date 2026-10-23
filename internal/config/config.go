@@ -112,6 +112,10 @@ type Config struct {
 	NoLive       bool
 	Interval     time.Duration
 	Duration     int
+
+	// ShowVersion asks only for the version to be printed; nothing else
+	// is validated.
+	ShowVersion bool
 }
 
 func Parse() *Config {
@@ -151,9 +155,13 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	fs.StringVar(&cfg.LogFile, "logfile", "", "Send logs to a file")
 	fs.StringVar(&cfg.TransLogFile, "transmission-logfile", "", "Open transmission logfile to monitor torrents completion")
 	fs.BoolVar(&cfg.NoLive, "no-live", false, "Don't edit and update info after sending")
+	fs.BoolVar(&cfg.ShowVersion, "version", false, "Print the version and exit")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
+	}
+	if cfg.ShowVersion {
+		return cfg, nil
 	}
 
 	given := make(map[string]bool)
