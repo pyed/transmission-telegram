@@ -27,7 +27,9 @@ named `transmission-telegram`.
 | `internal/bot/format.go` | How torrents look: `torrentLine` (lists), `torrentBlock` (head, tail, active), `torrentCard` (info), icons, sizes, rates |
 | `internal/bot/lists.go`, `info.go`, `session.go`, `settings.go`, `actions.go` | Commands by what they do |
 | `internal/bot/live.go` | Live edits of the head, tail, active, speed and info replies |
-| `internal/notify` | Completion and outage notifications from the RPC watcher (`watcher.go`); `-transmission-logfile` is accepted but ignored |
+| `internal/notify` | The `Watcher`: checks Transmission every `-watch-interval` and announces completions, outages, new errors and low disk space; `Kinds`, `Chats` and `KindsOf` say which chats get what. `-transmission-logfile` is accepted but ignored |
+| `internal/state` | The state file (`-state`/`TT_STATE`): `Data` is everything the bot remembers (last chat, `/notify` choices, sorts, incomplete torrents, menu); `Store.Update` saves atomically, 0600 |
+| `internal/bot/notify.go`, `sorting.go` | `/notify`; each chat's sort order and `b.torrents` |
 | `internal/logfile` | `-logfile`: a 0600 log file moved aside to `FILE.1` at 10 MiB |
 
 Dependencies: `github.com/go-telegram/bot` (Telegram Bot API),
@@ -76,6 +78,16 @@ before piping test output into `tail` or `grep`, or a failure can hide.
   `b.launch`, which recovers panics and is counted in `b.wg` for shutdown;
   never block a chat's goroutine for long (live views run in the background
   through `startLive`, one per chat).
+- Anything the bot must remember across restarts is a field of `state.Data`;
+  change it with `Store.Update`, and only when it changed (every update writes
+  and syncs the file). A save that fails keeps the change in memory and is
+  logged, never fatal.
+- Lists go through `b.torrents(ctx, chatID)`, which applies the chat's saved
+  sort (stable, ties by ID); don't use the client's global `SetSort`.
+- The watcher knows torrents by info-hash (IDs change when Transmission
+  restarts), asks only for `watchFields`, and is tested through `check` with a
+  fake clock and an in-memory `fakeTransmission` (`internal/notify`). Until a
+  chat uses `/notify`, completions and outages go to `state.Data.LastChat`.
 - Actions on several torrents look them up in one request
   (`torrentsNamed`), act in one more, and reply once (`summary`).
 - Tests drive handlers directly against in-process fakes: `newFakeTelegram`
