@@ -20,12 +20,20 @@ const (
 	buttonsPerRow = 5
 )
 
-// screen is a list message the bot remembers: the command that made it,
-// which it runs again for fresh pages, and the page it shows.
+// screen is a message with buttons the bot remembers: the command that
+// made it, which a list runs again for fresh pages, the page it shows, and
+// for /deldata's question, the torrents it would delete.
 type screen struct {
 	command string
 	args    []string
 	page    int
+	remove  []torrentRef
+}
+
+// torrentRef names a torrent as buttons do: by ID and fingerprint.
+type torrentRef struct {
+	id          int
+	fingerprint string
 }
 
 type screenKey struct {
@@ -51,6 +59,10 @@ func (s *screenStore) put(key screenKey, sc *screen) {
 		}
 	}
 	s.screens[key] = sc
+}
+
+func (s *screenStore) forget(key screenKey) {
+	delete(s.screens, key)
 }
 
 func (s *screenStore) get(key screenKey) (screen, bool) {
@@ -94,6 +106,12 @@ func (b *Bot) rememberScreen(key screenKey, sc *screen) {
 	b.screens.put(key, sc)
 }
 
+func (b *Bot) forgetScreen(p *press) {
+	b.screensMu.Lock()
+	defer b.screensMu.Unlock()
+	b.screens.forget(screenKey{p.chatID, p.messageID})
+}
+
 func (b *Bot) screenOf(p *press) (screen, bool) {
 	b.screensMu.Lock()
 	defer b.screensMu.Unlock()
@@ -103,8 +121,8 @@ func (b *Bot) screenOf(p *press) (screen, bool) {
 // hasScreen reports whether the pressed message is a list the bot
 // remembers, which its cards can go back to.
 func (b *Bot) hasScreen(p *press) bool {
-	_, ok := b.screenOf(p)
-	return ok
+	sc, ok := b.screenOf(p)
+	return ok && sc.command != "deldata"
 }
 
 // listPage shows one page of a listing: its torrents a line each, and a

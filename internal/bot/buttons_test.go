@@ -166,6 +166,59 @@ func TestEarlierVersionsButtons(t *testing.T) {
 	}
 }
 
+// /deldata asks first, naming the torrents and their sizes; Yes deletes
+// them with their data, once, and only those still the same torrents.
+func TestDeldataAsksFirst(t *testing.T) {
+	b, ft, fts := buttonBot(t)
+	fts.torrents = append(fts.torrents, &transmission.Torrent{ID: 8, Name: "Other", HashString: "ffff" + testHash[4:], SizeWhenDone: 2_000_000_000})
+	ctx := context.Background()
+
+	b.handleUpdate(ctx, nil, message("/deldata 7 8 x"))
+	if got := fts.methodCount("torrent-remove"); got != 0 {
+		t.Fatalf("/deldata deleted before asking (%d calls)", got)
+	}
+	question := ft.sentTexts()[0]
+	for _, want := range []string{"Delete these torrents and their data?", "<code>7</code> Test &lt;Torrent&gt;", "<code>8</code> Other (2.0 GB)", "⚠️ x is not a torrent ID"} {
+		if !strings.Contains(question, want) {
+			t.Fatalf("the question does not say %q:\n%s", want, question)
+		}
+	}
+
+	// Torrent 8 is replaced by another torrent with its ID before the answer.
+	fts.set(func() { fts.torrents[1].HashString = "eeee" + testHash[4:] })
+	b.handleCallbackQuery(ctx, pressOn(1, "dd:yes"))
+	b.handleCallbackQuery(ctx, pressOn(1, "dd:yes"))
+	bodies := fts.requestBodies("torrent-remove")
+	if len(bodies) != 1 || bodies[0] != `{"method":"torrent-remove","arguments":{"ids":[7],"delete-local-data":true}}` {
+		t.Fatalf("torrent-remove requests = %q", bodies)
+	}
+	if edits := ft.editsOf("1"); len(edits) != 1 || !strings.Contains(edits[0], "<b>Deleted with data:</b>\n<code>7</code>") ||
+		!strings.Contains(edits[0], "<code>8</code> is gone or is another torrent now") {
+		t.Fatalf("edits = %q", edits)
+	}
+	if answers := ft.callbackAnswers(); len(answers) != 2 || answers[1] != "This question is too old; send /deldata again" {
+		t.Fatalf("answers = %q", answers)
+	}
+}
+
+// Cancel deletes nothing; "confirm" deletes at once, for scripts.
+func TestDeldataCancelAndConfirm(t *testing.T) {
+	b, ft, fts := buttonBot(t)
+	ctx := context.Background()
+	b.handleUpdate(ctx, nil, message("/deldata 7"))
+	b.handleCallbackQuery(ctx, pressOn(1, "dd:no"))
+	if got := fts.methodCount("torrent-remove"); got != 0 {
+		t.Fatalf("Cancel deleted (%d calls)", got)
+	}
+	b.handleUpdate(ctx, nil, message("/deldata 7 CONFIRM"))
+	if bodies := fts.requestBodies("torrent-remove"); len(bodies) != 1 || !strings.Contains(bodies[0], `"delete-local-data":true`) {
+		t.Fatalf("torrent-remove requests = %q", bodies)
+	}
+	if texts := ft.sentTexts(); len(texts) != 2 || !strings.HasPrefix(texts[1], "<b>Deleted with data:</b>") {
+		t.Fatalf("replies = %q", texts)
+	}
+}
+
 // A button pressed under a live card ends the live view, which would
 // otherwise put the card back over what the press showed.
 func TestPressingALiveCardEndsItsLiveView(t *testing.T) {

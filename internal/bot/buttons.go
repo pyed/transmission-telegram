@@ -62,6 +62,8 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cb *models.CallbackQuery)
 		b.turnPage(ctx, p)
 	case "back":
 		b.goBack(ctx, p)
+	case "dd":
+		b.confirmDeletion(ctx, p)
 	case "cmd":
 		b.legacyPress(ctx, p)
 	default:

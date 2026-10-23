@@ -13,7 +13,9 @@ import (
 	"time"
 
 	tgbot "github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 	"github.com/pyed/transmission"
+	"github.com/pyed/transmission-telegram/v2/internal/redact"
 )
 
 // add adds torrents by URL or magnet link.
@@ -162,9 +164,91 @@ func (b *Bot) del(ctx context.Context, r *request) {
 	b.remove(ctx, r, "del", false)
 }
 
-// deldata removes torrents and deletes their data.
+// deldata removes torrents and deletes their data, once a button confirms
+// it; "confirm" as the last argument deletes at once, for scripts.
 func (b *Bot) deldata(ctx context.Context, r *request) {
-	b.remove(ctx, r, "deldata", true)
+	if n := len(r.args); n > 0 && strings.EqualFold(r.args[n-1], "confirm") {
+		b.remove(ctx, &request{chatID: r.chatID, message: r.message, args: r.args[:n-1]}, "deldata", true)
+		return
+	}
+	if len(r.args) == 0 {
+		b.reply(ctx, r, "<b>deldata:</b> needs an ID")
+		return
+	}
+	torrents, problems, ok := b.torrentsNamed(ctx, r, "deldata")
+	if !ok {
+		return
+	}
+	if len(torrents) == 0 {
+		b.reply(ctx, r, summary("", nil, problems))
+		return
+	}
+	lines := []string{"💣 <b>Delete these torrents and their data?</b> The files cannot be got back."}
+	refs := make([]torrentRef, len(torrents))
+	for i, t := range torrents {
+		lines = append(lines, fmt.Sprintf("<code>%d</code> %s (%s)", t.ID, esc(t.Name), size(t.SizeWhenDone)))
+		refs[i] = torrentRef{id: t.ID, fingerprint: torrentFingerprint(t.HashString)}
+	}
+	for _, problem := range problems {
+		lines = append(lines, "⚠️ "+problem)
+	}
+	keyboard := &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
+		{Text: "💣 Yes, delete the data", CallbackData: "dd:yes"}, {Text: "Cancel", CallbackData: "dd:no"},
+	}}}
+	messageID, _ := b.send(ctx, r.chatID, strings.Join(lines, "\n"), keyboard)
+	if messageID != 0 {
+		b.rememberScreen(screenKey{r.chatID, messageID}, &screen{command: "deldata", remove: refs})
+	}
+}
+
+// confirmDeletion answers /deldata's question: dd:yes deletes the torrents
+// it named, those that are still the same torrents, and dd:no deletes
+// nothing. Either answers the question for good, so a second tap does
+// nothing.
+func (b *Bot) confirmDeletion(ctx context.Context, p *press) {
+	sc, ok := b.screenOf(p)
+	if !ok || sc.command != "deldata" {
+		b.answerCallback(ctx, p.query.ID, "This question is too old; send /deldata again", true)
+		return
+	}
+	b.forgetScreen(p)
+	if len(p.args) != 1 || p.args[0] != "yes" {
+		b.answerCallback(ctx, p.query.ID, "Nothing deleted", false)
+		b.editPressed(ctx, p, "Nothing was deleted.", nil)
+		return
+	}
+
+	ids := make([]int, len(sc.remove))
+	for i, ref := range sc.remove {
+		ids[i] = ref.id
+	}
+	found, err := b.Client.GetTorrentsByIDs(ctx, ids, "id", "name", "hashString")
+	if err != nil {
+		b.answerCallback(ctx, p.query.ID, "Transmission failed: "+redact.Error(err), true)
+		b.editPressed(ctx, p, "Nothing was deleted: Transmission failed. Send /deldata again.", nil)
+		return
+	}
+	var torrents transmission.Torrents
+	var problems []string
+	for _, ref := range sc.remove {
+		index := slices.IndexFunc(found, func(t *transmission.Torrent) bool {
+			return t.ID == ref.id && torrentFingerprint(t.HashString) == ref.fingerprint
+		})
+		if index < 0 {
+			problems = append(problems, fmt.Sprintf("<code>%d</code> is gone or is another torrent now, so it was left alone", ref.id))
+			continue
+		}
+		torrents = append(torrents, found[index])
+	}
+	if len(torrents) > 0 {
+		if err := b.Client.RemoveTorrents(ctx, true, torrents.GetIDs()...); err != nil {
+			b.answerCallback(ctx, p.query.ID, "Transmission failed: "+redact.Error(err), true)
+			b.editPressed(ctx, p, "Nothing was deleted: Transmission failed. Send /deldata again.", nil)
+			return
+		}
+	}
+	b.answerCallback(ctx, p.query.ID, "Deleted", false)
+	b.editPressed(ctx, p, summary("Deleted with data", torrents, problems), nil)
 }
 
 // remove removes the torrents named by ID, with their data or not, and
@@ -261,7 +345,7 @@ func (b *Bot) torrentsNamed(ctx context.Context, r *request, name string) (trans
 	if len(ids) == 0 {
 		return nil, problems, true
 	}
-	found, err := b.Client.GetTorrentsByIDs(ctx, ids, "id", "name")
+	found, err := b.Client.GetTorrentsByIDs(ctx, ids, "id", "name", "hashString", "sizeWhenDone")
 	if err != nil {
 		b.replyError(ctx, r, name, err)
 		return nil, nil, false

@@ -40,6 +40,13 @@ type fakeTransmission struct {
 	stats string
 }
 
+// set changes the fake under its lock.
+func (f *fakeTransmission) set(change func()) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	change()
+}
+
 func (f *fakeTransmission) setStall(stall chan struct{}) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

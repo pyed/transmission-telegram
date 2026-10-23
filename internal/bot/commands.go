@@ -52,7 +52,7 @@ func commandTable() []commandSection {
 			{"check", []string{"ck"}, "<id…|all>", "Verify torrents' data", (*Bot).check},
 			{"reannounce", []string{"ra"}, "<id…|all>", "Ask trackers for peers now", (*Bot).reannounce},
 			{"del", []string{"rm"}, "<id…>", "Remove torrents and keep their data", (*Bot).del},
-			{"deldata", nil, "<id…>", "Remove torrents and delete their data", (*Bot).deldata},
+			{"deldata", nil, "<id…> [confirm]", "Remove torrents and delete their data, after asking", (*Bot).deldata},
 		}},
 		{"Session and settings", []command{
 			{"speed", []string{"ss"}, "", "Show the current speeds, updating live", (*Bot).speed},
