@@ -33,24 +33,37 @@ Paused: <b>%d</b>
 <i>Current session</i>
 Downloaded: <b>%s</b>
 Uploaded: <b>%s</b>
+Ratio: <b>%s</b>
 Running time: <b>%s</b>
 
 <i>Accumulated</i>
 Sessions: <b>%d</b>
 Downloaded: <b>%s</b>
 Uploaded: <b>%s</b>
+Ratio: <b>%s</b>
 Total running time: <b>%s</b>`,
 		stats.TorrentCount,
 		stats.ActiveTorrentCount,
 		stats.PausedTorrentCount,
 		size(stats.CurrentStats.DownloadedBytes),
 		size(stats.CurrentStats.UploadedBytes),
+		shareRatio(stats.CurrentStats.UploadedBytes, stats.CurrentStats.DownloadedBytes),
 		stats.CurrentActiveTime(),
 		stats.CumulativeStats.SessionCount,
 		size(stats.CumulativeStats.DownloadedBytes),
 		size(stats.CumulativeStats.UploadedBytes),
+		shareRatio(stats.CumulativeStats.UploadedBytes, stats.CumulativeStats.DownloadedBytes),
 		stats.CumulativeActiveTime(),
 	))
+}
+
+// shareRatio is uploaded over downloaded, as Transmission works out its
+// ratios; a dash before anything was downloaded.
+func shareRatio(uploaded, downloaded uint64) string {
+	if downloaded == 0 {
+		return "–"
+	}
+	return ratio(float64(uploaded) / float64(downloaded))
 }
 
 // speed shows the current download and upload speeds, updating them live.

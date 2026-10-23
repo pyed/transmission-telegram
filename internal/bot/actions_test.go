@@ -36,6 +36,8 @@ type fakeTransmission struct {
 	// addAnswer is torrent-add's arguments, as JSON; a new torrent 7 when
 	// empty.
 	addAnswer string
+	// stats is session-stats' arguments, as JSON; zeros when empty.
+	stats string
 }
 
 func (f *fakeTransmission) setStall(stall chan struct{}) {
@@ -75,6 +77,14 @@ func newFakeTransmission(t *testing.T) *fakeTransmission {
 				session = `{"version":"test"}`
 			}
 			_, _ = fmt.Fprintf(w, `{"result":"success","arguments":%s}`, session)
+		case "session-stats":
+			f.mu.Lock()
+			stats := f.stats
+			f.mu.Unlock()
+			if stats == "" {
+				stats = `{}`
+			}
+			_, _ = fmt.Fprintf(w, `{"result":"success","arguments":%s}`, stats)
 		case "torrent-add":
 			f.mu.Lock()
 			f.addBodies = append(f.addBodies, string(body))

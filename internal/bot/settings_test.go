@@ -179,6 +179,33 @@ func TestListCountsMustBePositive(t *testing.T) {
 	}
 }
 
+// /stats shows the share ratio of the session and of all time (issue #23),
+// and a dash before anything was downloaded.
+func TestStatsShowRatios(t *testing.T) {
+	ft := newFakeTelegram(t)
+	fts := newFakeTransmission(t)
+	fts.stats = `{"current-stats":{"downloadedBytes":0,"uploadedBytes":500},` +
+		`"cumulative-stats":{"downloadedBytes":2000,"uploadedBytes":3000,"sessionCount":4}}`
+	client, err := transmission.New(fts.URL+"/transmission/rpc", "", "")
+	if err != nil {
+		t.Fatalf("failed to create transmission client: %v", err)
+	}
+	b := newTestBot(t, ft.newBot(t), client)
+
+	b.stats(context.Background(), req())
+	texts := ft.sentTexts()
+	if len(texts) != 1 {
+		t.Fatalf("replies = %q", texts)
+	}
+	shown := plainText(texts[0])
+	if !strings.Contains(shown, "Ratio: –\nRunning time") || !strings.Contains(shown, "Ratio: 1.50\nTotal running time") {
+		t.Fatalf("ratios missing:\n%s", shown)
+	}
+	if strings.Contains(texts[0], "\t") {
+		t.Fatalf("stats still indented with tabs: %q", texts[0])
+	}
+}
+
 func TestTurtleRejectsInvalidArgument(t *testing.T) {
 	ft := newFakeTelegram(t)
 	fts := newFakeTransmission(t)
