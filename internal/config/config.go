@@ -12,49 +12,6 @@ import (
 	"time"
 )
 
-const Help = `
-*Torrent lists*
-/list (optional tracker) — all torrents, optionally filtered by tracker (/li, /ls)
-/head (optional n) — first n torrents with live speeds (/he)
-/tail (optional n) — last n torrents with live speeds (/ta)
-/active — actively transferring torrents (/ac)
-/downs — downloading and queued torrents (/dg)
-/seeding — seeding and queued torrents (/sd)
-/paused — stopped torrents (/pa)
-/checking — verifying and queued torrents (/ch)
-/errors — torrents with errors (/er)
-/latest (optional n) — newest torrents; default 5 (/la)
-/search <name> — search torrent names (/se)
-/info <id...> — details and inline controls (/in)
-
-*Torrent control*
-/add <url|magnet...> — add one or more torrents (/ad)
-You can also send a .torrent document directly.
-/stop <id...|all> — pause torrents (/sp)
-/start <id...|all> — resume torrents (/st)
-/check <id...|all> — verify torrents (/ck)
-/del <id...> — remove torrents, keeping local data (/rm)
-/deldata <id...> — permanently remove torrents and local data
-/reannounce <id...|all> — contact trackers now (/ra)
-
-*Session and settings*
-/speed — current transfer speeds (/ss)
-/stats — session and cumulative statistics (/sa)
-/count — torrent counts by status (/co)
-/trackers — tracker hosts and torrent counts (/tr)
-/sort (optional rev) <method> — set listing order (/so)
-/turtle (optional on|off) — alternative speed limits (/alt, /tu)
-/free (optional path) — available disk space (/space, /disk)
-/downlimit <KB/s> — global download limit (/dl)
-/uplimit <KB/s> — global upload limit (/ul)
-/downloaddir <path> — set the default download directory (/dd)
-/version — Transmission and bot versions (/ver)
-/help — show this message
-
-Only authorized users are accepted. In groups, Telegram may display commands as /command@BotName.
-Be careful with /deldata: it deletes downloaded files immediately.
-Report issues: https://github.com/pyed/transmission-telegram`
-
 // Version is overridden by release builds. Tagged go install builds fall back
 // to the module version recorded in Go build information.
 var Version = "dev"

@@ -31,53 +31,6 @@ func TestBot_ChatID(t *testing.T) {
 	}
 }
 
-func TestBot_CommandRegistration(t *testing.T) {
-	b := &Bot{
-		Config: &config.Config{},
-	}
-	b.registerCommands()
-
-	expectedCommands := []string{
-		"list", "li", "ls",
-		"head", "he",
-		"tail", "ta",
-		"downs", "dg",
-		"seeding", "sd",
-		"paused", "pa",
-		"checking", "ch",
-		"active", "ac",
-		"errors", "er",
-		"sort", "so",
-		"trackers", "tr",
-		"downloaddir", "dd",
-		"add", "ad",
-		"search", "se",
-		"latest", "la",
-		"info", "in",
-		"stop", "sp",
-		"start", "st",
-		"check", "ck",
-		"stats", "sa",
-		"downlimit", "dl",
-		"uplimit", "ul",
-		"speed", "ss",
-		"count", "co",
-		"del", "rm",
-		"deldata",
-		"turtle", "alt", "tu",
-		"free", "space", "disk",
-		"reannounce", "ra",
-		"help",
-		"version", "ver",
-	}
-
-	for _, cmd := range expectedCommands {
-		if _, ok := b.commands[cmd]; !ok {
-			t.Errorf("expected command %q to be registered", cmd)
-		}
-	}
-}
-
 func TestNormalizeCommand(t *testing.T) {
 	tests := []struct {
 		input       string
@@ -226,46 +179,6 @@ func TestNewKeepsTheBotUsername(t *testing.T) {
 	}
 }
 
-func TestDefaultBotCommands(t *testing.T) {
-	b := &Bot{
-		Config: &config.Config{},
-	}
-	b.registerCommands()
-
-	cmds := defaultBotCommands()
-	if len(cmds) == 0 {
-		t.Fatalf("expected non-empty defaultBotCommands")
-	}
-
-	for _, c := range cmds {
-		if strings.HasPrefix(c.Command, "/") {
-			t.Errorf("command %q should not have leading slash", c.Command)
-		}
-		if c.Description == "" {
-			t.Errorf("command %q has empty description", c.Command)
-		}
-		if _, ok := b.commands[c.Command]; !ok {
-			t.Errorf("menu command %q is not registered in bot handlers", c.Command)
-		}
-	}
-
-	expectedPrimary := []string{
-		"list", "head", "tail", "active", "downs", "seeding", "paused", "checking", "errors",
-		"latest", "search", "info", "add", "stop", "start", "check", "del", "deldata",
-		"speed", "stats", "free", "turtle", "reannounce", "downlimit", "uplimit",
-		"downloaddir", "sort", "trackers", "count", "help", "version",
-	}
-	menu := make(map[string]bool, len(cmds))
-	for _, command := range cmds {
-		menu[command.Command] = true
-	}
-	for _, command := range expectedPrimary {
-		if !menu[command] {
-			t.Errorf("primary command %q is missing from the Telegram menu", command)
-		}
-	}
-}
-
 func TestClearWebhookSkipsDeleteWhenUnset(t *testing.T) {
 	var deleteCalls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -287,14 +200,6 @@ func TestClearWebhookSkipsDeleteWhenUnset(t *testing.T) {
 	}
 	if got := deleteCalls.Load(); got != 0 {
 		t.Fatalf("deleteWebhook called %d times for an absent webhook", got)
-	}
-}
-
-func TestHelpCoversEveryMenuCommand(t *testing.T) {
-	for _, command := range defaultBotCommands() {
-		if !strings.Contains(config.Help, "/"+command.Command) {
-			t.Errorf("help text does not mention /%s", command.Command)
-		}
 	}
 }
 

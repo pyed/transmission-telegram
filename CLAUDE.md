@@ -20,11 +20,13 @@ named `transmission-telegram`.
 |---|---|
 | `main.go` | Entry point: config, logger, Transmission client, bot, completion watcher |
 | `internal/redact` | `URL` and `Error` keep credentials and query tokens out of logged URLs and request errors |
-| `internal/config` | Flags and environment (`ParseFlags`), `MasterSlice` (authorized users), the `/help` text, `Version` |
-| `internal/bot/bot.go` | `Bot`, startup calls to Telegram, update dispatch (`handleUpdate`), callback buttons, panic recovery |
-| `internal/bot/handler.go` | The command map (names and aliases), `/help`, `/version` |
-| `internal/bot/commands_*.go` | Commands by area: `list` (lists), `status` (state lists), `info` (card, stats, speed, count), `manage` (add, upload, del, start/stop/check), `settings` (sort, limits, turtle, free space, reannounce) |
-| `internal/bot/send.go`, `liveupdate.go`, `format.go` | Sending and splitting messages, live edits, progress bars and tracker hosts |
+| `internal/config` | Flags and environment (`ParseFlags`), `MasterSlice` (authorized users), `Version` |
+| `internal/bot/bot.go` | `Bot`, `New` (startup calls to Telegram, retried), `request`, `reply`, update dispatch (`handleUpdate`), callback buttons, panic recovery |
+| `internal/bot/commands.go` | `commandTable`: every command's name, aliases, arguments and help; dispatch, `/help` and the Telegram menu are generated from it |
+| `internal/bot/telegram.go` | Sending: HTML helpers (`esc`, `plainText`), UTF-16 lengths, chunking between lines, the `.txt` fallback, `retryTelegram`, `edit` |
+| `internal/bot/format.go` | How torrents look: `torrentLine` (lists), `torrentBlock` (head, tail, active), `torrentCard` (info), icons, sizes, rates |
+| `internal/bot/lists.go`, `info.go`, `session.go`, `settings.go`, `actions.go` | Commands by what they do |
+| `internal/bot/live.go` | Live edits of the head, tail, active, speed and info replies |
 | `internal/notify` | Completion and outage notifications from the RPC watcher (`watcher.go`); `-transmission-logfile` is accepted but ignored |
 | `internal/logfile` | `-logfile`: a 0600 log file moved aside to `FILE.1` at 10 MiB |
 
@@ -55,6 +57,12 @@ before piping test output into `tail` or `grep`, or a failure can hide.
   in-process (`downloadTelegramFile`) and their errors are wrapped in
   `privateDownloadError`. Torrents uploaded in chat reach Transmission as
   metainfo, never as a URL.
+- Replies are HTML. Put everything that is not the bot's own markup (names,
+  paths, errors, what users typed) through `esc`, and keep every tag within one
+  line: long replies are split between lines. `TestRepliesAreValidHTMLAndShowNamesExactly`
+  runs every command against hostile names; add new commands to it.
+- A new command goes in `commandTable` only; the menu, `/help`, and dispatch
+  follow. Keep old names and aliases (`TestCommandsKeepTheirNamesAndAliases`).
 - Authorization is by user: `Config.Masters.Contains(username, userID)` for
   messages, and the same check on `cb.From` for button presses.
 - Button callback data is `cmd:<action>:<id>:<fingerprint>`, the fingerprint

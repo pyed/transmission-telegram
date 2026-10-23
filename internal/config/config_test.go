@@ -7,14 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 )
-
-func TestHelpFitsTelegramMessageLimit(t *testing.T) {
-	if length := utf8.RuneCountInString(Help); length > 4096 {
-		t.Fatalf("help text is %d characters; Telegram permits at most 4096", length)
-	}
-}
 
 func TestMasterSlice(t *testing.T) {
 	var masters MasterSlice

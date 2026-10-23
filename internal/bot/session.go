@@ -3,29 +3,10 @@ package bot
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/pyed/transmission"
 	"github.com/pyed/transmission-telegram/v2/internal/config"
 )
-
-// helpText is the reply to /help: config.Help, whose section headings are
-// marked with asterisks, as HTML.
-var helpText = func() string {
-	lines := strings.Split(strings.TrimSpace(config.Help), "\n")
-	for i, line := range lines {
-		if len(line) > 2 && strings.HasPrefix(line, "*") && strings.HasSuffix(line, "*") {
-			lines[i] = "<b>" + esc(strings.Trim(line, "*")) + "</b>"
-		} else {
-			lines[i] = esc(line)
-		}
-	}
-	return strings.Join(lines, "\n")
-}()
-
-func (b *Bot) help(ctx context.Context, r *request) {
-	b.reply(ctx, r, helpText)
-}
 
 // version shows Transmission's version, asked each time, and the bot's.
 func (b *Bot) version(ctx context.Context, r *request) {

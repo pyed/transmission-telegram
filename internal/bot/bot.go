@@ -121,7 +121,7 @@ func New(ctx context.Context, cfg *config.Config, client *transmission.Transmiss
 
 	// Register command list with Telegram menu button
 	if _, err := api.SetMyCommands(ctx, &tgbot.SetMyCommandsParams{
-		Commands: defaultBotCommands(),
+		Commands: menuCommands(),
 	}); err != nil {
 		logger.Warn("SetMyCommands failed", "error", err)
 	}
@@ -177,43 +177,6 @@ func clearWebhook(ctx context.Context, api *tgbot.Bot) error {
 		return fmt.Errorf("delete stale Telegram webhook: %w", err)
 	}
 	return nil
-}
-
-// defaultBotCommands returns the list of primary commands to display in Telegram's menu.
-func defaultBotCommands() []models.BotCommand {
-	return []models.BotCommand{
-		{Command: "list", Description: "List torrents (optional tracker filter)"},
-		{Command: "head", Description: "List first n torrents with live speed"},
-		{Command: "tail", Description: "List last n torrents with live speed"},
-		{Command: "active", Description: "List active uploading/downloading torrents"},
-		{Command: "downs", Description: "List downloading torrents"},
-		{Command: "seeding", Description: "List seeding torrents"},
-		{Command: "paused", Description: "List paused torrents"},
-		{Command: "checking", Description: "List verifying torrents"},
-		{Command: "errors", Description: "List torrents with errors"},
-		{Command: "latest", Description: "List newest added torrents"},
-		{Command: "search", Description: "Search torrents by name"},
-		{Command: "info", Description: "Show torrent details and controls"},
-		{Command: "add", Description: "Add torrent URLs or magnet links"},
-		{Command: "stop", Description: "Pause torrents by ID or all"},
-		{Command: "start", Description: "Resume torrents by ID or all"},
-		{Command: "check", Description: "Verify torrents by ID or all"},
-		{Command: "del", Description: "Remove torrents by ID"},
-		{Command: "deldata", Description: "Remove torrents and their local data"},
-		{Command: "speed", Description: "Show current upload & download speeds"},
-		{Command: "stats", Description: "Show Transmission cumulative stats"},
-		{Command: "free", Description: "Show download directory free disk space"},
-		{Command: "turtle", Description: "Toggle Turtle Mode (alternative speed limits)"},
-		{Command: "reannounce", Description: "Force tracker re-announce"},
-		{Command: "downlimit", Description: "Set the global download speed limit"},
-		{Command: "uplimit", Description: "Set the global upload speed limit"},
-		{Command: "downloaddir", Description: "Set the default download directory"},
-		{Command: "sort", Description: "Set torrent listing order"},
-		{Command: "trackers", Description: "Show trackers and torrent counts"},
-		{Command: "count", Description: "Show torrent count by status"},
-		{Command: "help", Description: "Show help message"},
-		{Command: "version", Description: "Show Transmission & bot versions"},
-	}
 }
 
 // Start starts the bot polling loop (blocks until context is cancelled).
