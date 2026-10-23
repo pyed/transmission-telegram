@@ -141,13 +141,7 @@ func New(ctx context.Context, cfg *config.Config, client *transmission.Transmiss
 		return nil, err
 	}
 
-	// Register command list with Telegram menu button
-	if _, err := api.SetMyCommands(ctx, &tgbot.SetMyCommandsParams{
-		Commands: menuCommands(),
-	}); err != nil {
-		logger.Warn("SetMyCommands failed", "error", err)
-	}
-
+	b.registerMenu(ctx)
 	return b, nil
 }
 

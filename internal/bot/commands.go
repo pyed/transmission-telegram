@@ -3,8 +3,10 @@ package bot
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
+	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
@@ -122,4 +124,50 @@ func menuCommands() []models.BotCommand {
 		}
 	}
 	return menu
+}
+
+// earlierMenus are the command names of the menus earlier versions
+// registered: v2.0 and v2.1.
+var earlierMenus = [][]string{
+	{"list", "head", "tail", "active", "downs", "seeding", "paused", "checking", "errors", "speed", "stats",
+		"free", "turtle", "count", "help", "version"},
+	{"list", "head", "tail", "active", "downs", "seeding", "paused", "checking", "errors", "latest", "search",
+		"info", "add", "stop", "start", "check", "del", "deldata", "speed", "stats", "free", "turtle",
+		"reannounce", "downlimit", "uplimit", "downloaddir", "sort", "trackers", "count", "help", "version"},
+}
+
+// registerMenu gives the bot its command menu, so that typing / in a chat
+// lists the commands: when it has none, or has one this bot registered,
+// from this version or an earlier one. A menu with other commands was set
+// in BotFather by the owner, and is kept.
+func (b *Bot) registerMenu(ctx context.Context) {
+	current, err := b.API.GetMyCommands(ctx, &tgbot.GetMyCommandsParams{})
+	if err != nil {
+		b.Logger.Warn("Could not read the command menu", "error", err)
+		return
+	}
+	menu := menuCommands()
+	if slices.Equal(current, menu) {
+		return
+	}
+	names := commandNames(current)
+	ours := len(current) == 0 || slices.Equal(names, commandNames(menu)) ||
+		slices.ContainsFunc(earlierMenus, func(earlier []string) bool { return slices.Equal(names, earlier) })
+	if !ours {
+		b.Logger.Info("Keeping the command menu set in BotFather")
+		return
+	}
+	if _, err := b.API.SetMyCommands(ctx, &tgbot.SetMyCommandsParams{Commands: menu}); err != nil {
+		b.Logger.Warn("Could not set the command menu", "error", err)
+		return
+	}
+	b.Logger.Info("Registered the command menu with Telegram")
+}
+
+func commandNames(menu []models.BotCommand) []string {
+	names := make([]string, len(menu))
+	for i, command := range menu {
+		names[i] = command.Command
+	}
+	return names
 }

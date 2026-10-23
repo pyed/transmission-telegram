@@ -124,6 +124,8 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"file_id":"test-file-id","file_path":"bots/123456/upload.torrent"}}`))
 		case "getMe":
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":123456,"is_bot":true,"first_name":"Transmission","username":"` + testBotUsername + `"}}`))
+		case "getMyCommands":
+			_, _ = w.Write([]byte(`{"ok":true,"result":[]}`))
 		case "getWebhookInfo":
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"url":"","has_custom_certificate":false,"pending_update_count":0}}`))
 		default:

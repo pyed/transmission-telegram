@@ -1,9 +1,13 @@
 package bot
 
 import (
+	"context"
+	"encoding/json"
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/go-telegram/bot/models"
 )
 
 // Every command name and alias of earlier versions still works.
@@ -55,6 +59,47 @@ func TestMenuCommandsAreValid(t *testing.T) {
 		if n := telegramLength(c.Description); n < 1 || n > 256 {
 			t.Errorf("/%s has a %d-character description", c.Command, n)
 		}
+	}
+}
+
+// The bot registers its menu when it has none, or one this bot registered,
+// from any version, and keeps a menu its owner set in BotFather.
+func TestRegisterMenuKeepsTheOwnersMenu(t *testing.T) {
+	answer := func(menu []models.BotCommand) string {
+		body, err := json.Marshal(map[string]any{"ok": true, "result": menu})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(body)
+	}
+	named := func(names ...string) []models.BotCommand {
+		menu := make([]models.BotCommand, len(names))
+		for i, name := range names {
+			menu[i] = models.BotCommand{Command: name, Description: "something else"}
+		}
+		return menu
+	}
+	for _, tt := range []struct {
+		name    string
+		current []models.BotCommand
+		wantSet bool
+	}{
+		{"no menu", nil, true},
+		{"v2.0's", named(earlierMenus[0]...), true},
+		{"v2.1's", named(earlierMenus[1]...), true},
+		{"this version's, worded differently", named(commandNames(menuCommands())...), true},
+		{"this version's", menuCommands(), false},
+		{"the owner's", named("list", "speed"), false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ft := newFakeTelegram(t)
+			b := newTestBot(t, ft.newBot(t), nil)
+			ft.script("getMyCommands", answer(tt.current))
+			b.registerMenu(context.Background())
+			if set := ft.callCount("setMyCommands") == 1; set != tt.wantSet {
+				t.Fatalf("menu set = %v, want %v", set, tt.wantSet)
+			}
+		})
 	}
 }
 
