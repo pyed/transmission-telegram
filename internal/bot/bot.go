@@ -50,6 +50,10 @@ type Bot struct {
 	// liveViews holds each chat's live view, if it has one.
 	liveMu    sync.Mutex
 	liveViews map[int64]*liveView
+
+	// screens remembers the list messages whose buttons turn pages.
+	screensMu sync.Mutex
+	screens   screenStore
 }
 
 // chatQueueSize is how many updates of one chat may wait for its handler.

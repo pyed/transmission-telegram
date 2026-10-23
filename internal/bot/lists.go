@@ -2,6 +2,8 @@ package bot
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -11,29 +13,7 @@ import (
 // list lists every torrent, or with an argument only those with a tracker
 // whose announce URL contains it.
 func (b *Bot) list(ctx context.Context, r *request) {
-	torrents, err := b.torrents(ctx, r.chatID)
-	if err != nil {
-		b.replyError(ctx, r, "list", err)
-		return
-	}
-	var query string
-	if len(r.args) > 0 {
-		query = strings.ToLower(r.args[0])
-	}
-	var lines []string
-	for _, t := range torrents {
-		if query == "" || strings.Contains(strings.ToLower(t.GetTrackers()), query) {
-			lines = append(lines, torrentLine(t))
-		}
-	}
-	switch {
-	case len(lines) > 0:
-		b.reply(ctx, r, strings.Join(lines, "\n"))
-	case query != "":
-		b.reply(ctx, r, "No torrent has a tracker matching <b>"+esc(r.args[0])+"</b>")
-	default:
-		b.reply(ctx, r, "No torrents")
-	}
+	b.replyList(ctx, r, "list")
 }
 
 // head shows the first n torrents (5 by default), updating them live.
@@ -69,17 +49,9 @@ func (b *Bot) headTail(ctx context.Context, r *request, name string, fromEnd boo
 
 // latest lists the n torrents added last (5 by default), newest first.
 func (b *Bot) latest(ctx context.Context, r *request) {
-	n, ok := b.countArgument(ctx, r, "latest")
-	if !ok {
-		return
+	if _, ok := b.countArgument(ctx, r, "latest"); ok {
+		b.replyList(ctx, r, "latest")
 	}
-	torrents, err := b.torrents(ctx, r.chatID)
-	if err != nil {
-		b.replyError(ctx, r, "latest", err)
-		return
-	}
-	torrents.SortAge(true)
-	b.replyLines(ctx, r, torrents[:min(n, len(torrents))], "No torrents")
 }
 
 // search lists the torrents whose names contain the query, ignoring case.
@@ -88,68 +60,95 @@ func (b *Bot) search(ctx context.Context, r *request) {
 		b.reply(ctx, r, "<b>search:</b> needs an argument")
 		return
 	}
-	query := strings.Join(r.args, " ")
-	torrents, err := b.torrents(ctx, r.chatID)
-	if err != nil {
-		b.replyError(ctx, r, "search", err)
-		return
-	}
-	lowered := strings.ToLower(query)
-	var matches transmission.Torrents
-	for _, t := range torrents {
-		if strings.Contains(strings.ToLower(t.Name), lowered) {
-			matches = append(matches, t)
-		}
-	}
-	b.replyLines(ctx, r, matches, "No torrent names match <b>"+esc(query)+"</b>")
+	b.replyList(ctx, r, "search")
 }
 
 // downs lists the torrents downloading or waiting to.
 func (b *Bot) downs(ctx context.Context, r *request) {
-	b.replyFiltered(ctx, r, "downs", "No downloads", func(t *transmission.Torrent) bool {
-		return t.Status == transmission.StatusDownloading || t.Status == transmission.StatusDownloadPending
-	})
+	b.replyList(ctx, r, "downs")
 }
 
 // seeding lists the torrents seeding or waiting to.
 func (b *Bot) seeding(ctx context.Context, r *request) {
-	b.replyFiltered(ctx, r, "seeding", "No torrents seeding", func(t *transmission.Torrent) bool {
-		return t.Status == transmission.StatusSeeding || t.Status == transmission.StatusSeedPending
-	})
+	b.replyList(ctx, r, "seeding")
 }
 
 // paused lists the stopped torrents.
 func (b *Bot) paused(ctx context.Context, r *request) {
-	b.replyFiltered(ctx, r, "paused", "No paused torrents", func(t *transmission.Torrent) bool {
-		return t.Status == transmission.StatusStopped
-	})
+	b.replyList(ctx, r, "paused")
 }
 
 // checking lists the torrents being verified or waiting to be.
 func (b *Bot) checking(ctx context.Context, r *request) {
-	b.replyFiltered(ctx, r, "checking", "No torrents verifying", func(t *transmission.Torrent) bool {
-		return t.Status == transmission.StatusChecking || t.Status == transmission.StatusCheckPending
-	})
+	b.replyList(ctx, r, "checking")
 }
 
 // errors lists the torrents with errors, each with its error.
 func (b *Bot) errors(ctx context.Context, r *request) {
-	torrents, err := b.torrents(ctx, r.chatID)
+	b.replyList(ctx, r, "errors")
+}
+
+// listing makes a list command's listing from Transmission's torrents now;
+// a list's page and Back buttons make it again, so they show fresh data.
+func (b *Bot) listing(ctx context.Context, chatID int64, command string, args []string) (listing, error) {
+	torrents, err := b.torrents(ctx, chatID)
 	if err != nil {
-		b.replyError(ctx, r, "errors", err)
-		return
+		return listing{}, err
 	}
-	var lines []string
-	for _, t := range torrents {
-		if t.Error != transmission.ErrorNone {
-			lines = append(lines, torrentLine(t)+"\n    "+esc(t.ErrorString))
+	keep := func(accept func(*transmission.Torrent) bool) transmission.Torrents {
+		var kept transmission.Torrents
+		for _, t := range torrents {
+			if accept(t) {
+				kept = append(kept, t)
+			}
 		}
+		return kept
 	}
-	if len(lines) == 0 {
-		b.reply(ctx, r, "No errors")
-		return
+	hasStatus := func(statuses ...int) transmission.Torrents {
+		return keep(func(t *transmission.Torrent) bool { return slices.Contains(statuses, t.Status) })
 	}
-	b.reply(ctx, r, strings.Join(lines, "\n"))
+	switch command {
+	case "list":
+		if len(args) == 0 {
+			return listing{torrents: torrents, none: "No torrents"}, nil
+		}
+		query := strings.ToLower(args[0])
+		return listing{
+			torrents: keep(func(t *transmission.Torrent) bool { return strings.Contains(strings.ToLower(t.GetTrackers()), query) }),
+			none:     "No torrent has a tracker matching <b>" + esc(args[0]) + "</b>",
+		}, nil
+	case "latest":
+		n := 5
+		if len(args) > 0 {
+			if given, err := strconv.Atoi(args[0]); err == nil && given > 0 {
+				n = given
+			}
+		}
+		sortTorrents(torrents, "rev age")
+		return listing{torrents: torrents[:min(n, len(torrents))], none: "No torrents"}, nil
+	case "search":
+		query := strings.Join(args, " ")
+		lowered := strings.ToLower(query)
+		return listing{
+			torrents: keep(func(t *transmission.Torrent) bool { return strings.Contains(strings.ToLower(t.Name), lowered) }),
+			none:     "No torrent names match <b>" + esc(query) + "</b>",
+		}, nil
+	case "downs":
+		return listing{torrents: hasStatus(transmission.StatusDownloading, transmission.StatusDownloadPending), none: "No downloads"}, nil
+	case "seeding":
+		return listing{torrents: hasStatus(transmission.StatusSeeding, transmission.StatusSeedPending), none: "No torrents seeding"}, nil
+	case "paused":
+		return listing{torrents: hasStatus(transmission.StatusStopped), none: "No paused torrents"}, nil
+	case "checking":
+		return listing{torrents: hasStatus(transmission.StatusChecking, transmission.StatusCheckPending), none: "No torrents verifying"}, nil
+	case "errors":
+		return listing{
+			torrents: keep(func(t *transmission.Torrent) bool { return t.Error != transmission.ErrorNone }),
+			line:     func(t *transmission.Torrent) string { return torrentLine(t) + "\n    " + esc(t.ErrorString) },
+			none:     "No errors",
+		}, nil
+	}
+	return listing{}, fmt.Errorf("no list is called %q", command)
 }
 
 // active shows the torrents transferring now, updating them live.
@@ -181,37 +180,6 @@ func (b *Bot) countArgument(ctx context.Context, r *request, name string) (int, 
 		return 0, false
 	}
 	return n, true
-}
-
-// replyFiltered lists the torrents keep accepts, or says none when there
-// are none.
-func (b *Bot) replyFiltered(ctx context.Context, r *request, name, none string, keep func(*transmission.Torrent) bool) {
-	torrents, err := b.torrents(ctx, r.chatID)
-	if err != nil {
-		b.replyError(ctx, r, name, err)
-		return
-	}
-	var kept transmission.Torrents
-	for _, t := range torrents {
-		if keep(t) {
-			kept = append(kept, t)
-		}
-	}
-	b.replyLines(ctx, r, kept, none)
-}
-
-// replyLines lists torrents a line each, or replies none when there are
-// none.
-func (b *Bot) replyLines(ctx context.Context, r *request, torrents transmission.Torrents, none string) {
-	if len(torrents) == 0 {
-		b.reply(ctx, r, none)
-		return
-	}
-	lines := make([]string, len(torrents))
-	for i, t := range torrents {
-		lines[i] = torrentLine(t)
-	}
-	b.reply(ctx, r, strings.Join(lines, "\n"))
 }
 
 // torrentBlocks shows torrents a block each, with a blank line between, as

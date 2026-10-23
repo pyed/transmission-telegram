@@ -58,6 +58,10 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cb *models.CallbackQuery)
 		b.cancelRemoval(ctx, p)
 	case "t":
 		b.openCard(ctx, p)
+	case "pg":
+		b.turnPage(ctx, p)
+	case "back":
+		b.goBack(ctx, p)
 	case "cmd":
 		b.legacyPress(ctx, p)
 	default:
@@ -107,7 +111,8 @@ func (b *Bot) legacyPress(ctx context.Context, p *press) {
 }
 
 // openCard shows a torrent's card: t:<id>:<fingerprint>. Pressed under a
-// notification, it sends the card as a new message.
+// list, the list becomes the card, with a button back; pressed under a
+// notification, the card comes as a new message.
 func (b *Bot) openCard(ctx context.Context, p *press) {
 	if len(p.args) != 2 {
 		b.answerCallback(ctx, p.query.ID, "This button no longer works", true)
@@ -118,6 +123,10 @@ func (b *Bot) openCard(ctx context.Context, p *press) {
 		return
 	}
 	b.answerCallback(ctx, p.query.ID, "", false)
+	if b.hasScreen(p) {
+		b.editPressed(ctx, p, torrentCard(t, false), cardKeyboard(t, true))
+		return
+	}
 	b.sendCard(ctx, p.chatID, t)
 }
 
@@ -143,12 +152,6 @@ func (b *Bot) pressedTorrent(ctx context.Context, p *press, idArg, fingerprint s
 		return nil, false
 	}
 	return t, true
-}
-
-// hasScreen reports whether the pressed message is a list the bot keeps
-// track of, which its cards can go back to.
-func (b *Bot) hasScreen(*press) bool {
-	return false
 }
 
 // editPressed shows text and markup in the pressed message.
