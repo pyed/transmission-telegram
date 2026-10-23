@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"runtime/debug"
 	"strconv"
@@ -185,8 +186,8 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 			cfg.BotToken = getenv("TT_BOTT")
 		}
 	}
-	if url := strings.TrimSpace(getenv("TR_URL")); !given["url"] && url != "" {
-		cfg.RPCURL = url
+	if rpcURL := strings.TrimSpace(getenv("TR_URL")); !given["url"] && rpcURL != "" {
+		cfg.RPCURL = rpcURL
 	}
 	if username, password, ok := strings.Cut(getenv("TR_AUTH"), ":"); ok {
 		if !given["username"] {
@@ -204,6 +205,10 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	}
 	if len(cfg.Masters) < 1 {
 		return nil, errors.New("at least one authorized user is required (-master)")
+	}
+	// The message leaves the URL out: it may carry credentials.
+	if u, err := url.Parse(cfg.RPCURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return nil, errors.New("transmission RPC URL (-url or TR_URL) must be an http:// or https:// URL, such as " + defaultRPCURL)
 	}
 
 	for i := range cfg.Masters {

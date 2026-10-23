@@ -251,6 +251,33 @@ func TestParseFlags_PrefersStandardTokenEnvironment(t *testing.T) {
 	}
 }
 
+// A URL Transmission cannot serve is refused at startup, without repeating
+// the URL, which may hold credentials.
+func TestParseFlags_RejectsURLsThatAreNotHTTP(t *testing.T) {
+	for _, rpcURL := range []string{
+		"localhost:9091/transmission/rpc",
+		"ftp://transmission/rpc",
+		"http://",
+		"http//user:secret@transmission:9091/transmission/rpc",
+	} {
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		_, err := ParseFlags(fs, []string{"-token=t", "-master=12345", "-url=" + rpcURL}, func(string) string { return "" })
+		if err == nil {
+			t.Errorf("%q accepted", rpcURL)
+			continue
+		}
+		if strings.Contains(err.Error(), "secret") {
+			t.Errorf("error repeats the URL's password: %v", err)
+		}
+	}
+	for _, rpcURL := range []string{"https://user:secret@seedbox.example/transmission/rpc", "http://192.168.1.2:9091/transmission/rpc"} {
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		if _, err := ParseFlags(fs, []string{"-token=t", "-master=12345", "-url=" + rpcURL}, func(string) string { return "" }); err != nil {
+			t.Errorf("%q refused: %v", rpcURL, err)
+		}
+	}
+}
+
 // -transmission-logfile no longer does anything, but existing service
 // definitions pass it, so it must still parse.
 func TestParseFlags_AcceptsDeprecatedTransmissionLogfile(t *testing.T) {

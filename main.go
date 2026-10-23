@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -15,6 +14,7 @@ import (
 	"github.com/pyed/transmission-telegram/v2/internal/config"
 	"github.com/pyed/transmission-telegram/v2/internal/logfile"
 	"github.com/pyed/transmission-telegram/v2/internal/notify"
+	"github.com/pyed/transmission-telegram/v2/internal/redact"
 )
 
 func main() {
@@ -45,7 +45,7 @@ func main() {
 	logger.Info("Starting transmission-telegram",
 		"version", config.Version,
 		"master_count", len(cfg.Masters),
-		"rpc_endpoint", safeEndpoint(cfg.RPCURL),
+		"rpc_endpoint", redact.URL(cfg.RPCURL),
 	)
 	if usernames := cfg.Masters.Usernames(); len(usernames) > 0 {
 		logger.Warn("Some masters are given by username. A username its owner gives up can be claimed by someone else, "+
@@ -53,11 +53,17 @@ func main() {
 			"usernames", usernames)
 	}
 
-	// Initialize Transmission client
+	// Initialize Transmission client. The client works without a first
+	// answer, so a Transmission that starts after the bot, as at boot or in
+	// Compose, is no reason to stop; the watcher reports while it is down.
 	client, err := transmission.New(cfg.RPCURL, cfg.Username, cfg.Password)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[ERROR] Transmission: Make sure you have the right URL, Username and Password\n")
+	if client == nil {
+		fmt.Fprintln(os.Stderr, "[ERROR] The Transmission RPC URL (-url or TR_URL) is invalid")
 		os.Exit(1)
+	}
+	if err != nil {
+		logger.Warn("Transmission is not answering; starting anyway, and commands will work once it does",
+			"error", redact.Error(err))
 	}
 
 	// Create bot instance
@@ -80,18 +86,4 @@ func main() {
 
 	// Run the bot (blocks until context is cancelled)
 	b.Start(ctx)
-}
-
-// safeEndpoint keeps operationally useful URL details out of logs without
-// exposing embedded credentials, query tokens, or fragments.
-func safeEndpoint(rawURL string) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return "[invalid URL]"
-	}
-	u.User = nil
-	u.RawQuery = ""
-	u.ForceQuery = false
-	u.Fragment = ""
-	return u.String()
 }

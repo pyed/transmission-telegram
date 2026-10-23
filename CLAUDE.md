@@ -18,7 +18,8 @@ named `transmission-telegram`.
 
 | Path | What it holds |
 |---|---|
-| `main.go` | Entry point: config, logger, Transmission client, bot, completion watcher; `safeEndpoint` keeps credentials out of logged URLs |
+| `main.go` | Entry point: config, logger, Transmission client, bot, completion watcher |
+| `internal/redact` | `URL` and `Error` keep credentials and query tokens out of logged URLs and request errors |
 | `internal/config` | Flags and environment (`ParseFlags`), `MasterSlice` (authorized users), the `/help` text, `Version` |
 | `internal/bot/bot.go` | `Bot`, startup calls to Telegram, update dispatch (`handleUpdate`), callback buttons, panic recovery |
 | `internal/bot/handler.go` | The command map (names and aliases), `/help`, `/version` |
@@ -49,7 +50,8 @@ before piping test output into `tail` or `grep`, or a failure can hide.
 - Every handler gets the update's `ctx`, and every RPC and Telegram call takes
   it, so shutdown cancels work in flight.
 - Never log or send the bot token or Transmission credentials. URLs go through
-  `safeEndpoint`; Telegram file URLs contain the token, so they are fetched
+  `redact.URL` and request errors through `redact.Error`; configuration errors
+  never repeat the URL. Telegram file URLs contain the token, so they are fetched
   in-process (`downloadTelegramFile`) and their errors are wrapped in
   `privateDownloadError`. Torrents uploaded in chat reach Transmission as
   metainfo, never as a URL.
