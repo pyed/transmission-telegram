@@ -10,12 +10,16 @@ import (
 	"testing"
 
 	tgbot "github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 	"github.com/pyed/transmission"
 	"github.com/pyed/transmission-telegram/v2/internal/config"
 )
 
 // testBotToken is a fake token used only in tests; it is not a real secret.
 const testBotToken = "123456:TEST-TOKEN"
+
+// testBotUsername is the username the fake Telegram server gives the bot.
+const testBotUsername = "MyTransmissionBot"
 
 // fakeTelegram is a minimal in-process Telegram Bot API server for tests.
 type fakeTelegram struct {
@@ -63,6 +67,10 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1,"date":1,"chat":{"id":42,"type":"private"}}}`))
 		case strings.HasSuffix(r.URL.Path, "/getFile"):
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"file_id":"test-file-id","file_path":"bots/123456/upload.torrent"}}`))
+		case strings.HasSuffix(r.URL.Path, "/getMe"):
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":123456,"is_bot":true,"first_name":"Transmission","username":"` + testBotUsername + `"}}`))
+		case strings.HasSuffix(r.URL.Path, "/getWebhookInfo"):
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"url":"","has_custom_certificate":false,"pending_update_count":0}}`))
 		default:
 			// sendChatAction, editMessageText, deleteWebhook, etc.
 			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
@@ -111,7 +119,7 @@ func (f *fakeTelegram) textEdits() int {
 // a Transmission client, for testing command handlers directly.
 func newTestBot(t *testing.T, api *tgbot.Bot, client *transmission.TransmissionClient) *Bot {
 	t.Helper()
-	return &Bot{
+	b := &Bot{
 		API:    api,
 		Client: client,
 		Config: &config.Config{},
@@ -124,4 +132,16 @@ func newTestBot(t *testing.T, api *tgbot.Bot, client *transmission.TransmissionC
 			"`", "'",
 		),
 	}
+	b.registerCommands()
+	return b
+}
+
+// message is a text message from user 12345 in chat 42.
+func message(text string) *models.Update {
+	return &models.Update{Message: &models.Message{
+		ID:   1,
+		Text: text,
+		From: &models.User{ID: 12345},
+		Chat: models.Chat{ID: 42, Type: models.ChatTypeSupergroup},
+	}}
 }

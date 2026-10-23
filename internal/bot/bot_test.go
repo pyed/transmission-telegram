@@ -3,6 +3,7 @@ package bot
 import (
 	"bytes"
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -94,33 +95,80 @@ func TestBot_CommandRegistration(t *testing.T) {
 
 func TestNormalizeCommand(t *testing.T) {
 	tests := []struct {
-		input    string
-		wantCmd  string
-		wantLink bool
+		input       string
+		wantCmd     string
+		wantMention string
+		wantLink    bool
 	}{
-		{"/list", "list", false},
-		{"/list@MyTransmissionBot", "list", false},
-		{"/LiSt@my_bot", "list", false},
-		{"list", "list", false},
-		{"/info@TransmissionBot", "info", false},
-		{"/help", "help", false},
-		{"magnet:?xt=urn:btih:xyz", "add", true},
-		{"http://example.com/test.torrent", "add", true},
-		{"https://example.com/test.torrent", "add", true},
-		{"HTTPS://example.com/test.torrent", "add", true},
-		{"MAGNET:?xt=urn:btih:xyz", "add", true},
-		{"http-not-a-url", "http-not-a-url", false},
-		{"/add", "add", false},
+		{"/list", "list", "", false},
+		{"/list@MyTransmissionBot", "list", "mytransmissionbot", false},
+		{"/LiSt@my_bot", "list", "my_bot", false},
+		{"list", "list", "", false},
+		{"/info@TransmissionBot", "info", "transmissionbot", false},
+		{"/help", "help", "", false},
+		{"magnet:?xt=urn:btih:xyz", "add", "", true},
+		{"http://example.com/test.torrent", "add", "", true},
+		{"https://example.com/test.torrent", "add", "", true},
+		{"HTTPS://example.com/test.torrent", "add", "", true},
+		{"MAGNET:?xt=urn:btih:xyz", "add", "", true},
+		{"http-not-a-url", "http-not-a-url", "", false},
+		{"/add", "add", "", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			cmd, isLink := normalizeCommand(tt.input)
-			if cmd != tt.wantCmd || isLink != tt.wantLink {
-				t.Errorf("normalizeCommand(%q) = (%q, %v), want (%q, %v)",
-					tt.input, cmd, isLink, tt.wantCmd, tt.wantLink)
+			cmd, mention, isLink := normalizeCommand(tt.input)
+			if cmd != tt.wantCmd || mention != tt.wantMention || isLink != tt.wantLink {
+				t.Errorf("normalizeCommand(%q) = (%q, %q, %v), want (%q, %q, %v)",
+					tt.input, cmd, mention, isLink, tt.wantCmd, tt.wantMention, tt.wantLink)
 			}
 		})
+	}
+}
+
+// A bot that sees every group message also receives the commands meant for
+// other bots, such as /stop@OtherBot all. Only commands addressed to this
+// bot, or to no bot, are its own.
+func TestCommandsForOtherBotsAreIgnored(t *testing.T) {
+	ft := newFakeTelegram(t)
+	fts := newFakeTransmission(t)
+	client, err := transmission.New(fts.URL+"/transmission/rpc", "", "")
+	if err != nil {
+		t.Fatalf("failed to create transmission client: %v", err)
+	}
+	b := newTestBot(t, ft.newBot(t), client)
+	b.Config.Masters = config.MasterSlice{"12345"}
+	b.username = testBotUsername
+
+	b.handleUpdate(context.Background(), nil, message("/stop@OtherBot all"))
+	if got := fts.methodCount("torrent-stop"); got != 0 {
+		t.Fatalf("another bot's command stopped torrents (%d calls)", got)
+	}
+	if texts := ft.sentTexts(); len(texts) != 0 {
+		t.Fatalf("answered another bot's command: %v", texts)
+	}
+	if got := b.ChatID(); got != 0 {
+		t.Fatalf("another bot's command moved notifications to chat %d", got)
+	}
+
+	b.handleUpdate(context.Background(), nil, message("/stop@mytransmissionbot all"))
+	b.handleUpdate(context.Background(), nil, message("/stop all"))
+	if got := fts.methodCount("torrent-stop"); got != 2 {
+		t.Fatalf("expected both of this bot's commands to stop torrents, got %d calls", got)
+	}
+}
+
+// New asks Telegram who the bot is once and keeps its username, which the
+// mention check needs.
+func TestNewKeepsTheBotUsername(t *testing.T) {
+	ft := newFakeTelegram(t)
+	cfg := &config.Config{BotToken: testBotToken, Masters: config.MasterSlice{"12345"}}
+	b, err := New(context.Background(), cfg, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), tgbot.WithServerURL(ft.URL))
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	if b.username != testBotUsername {
+		t.Fatalf("username = %q, want %q", b.username, testBotUsername)
 	}
 }
 

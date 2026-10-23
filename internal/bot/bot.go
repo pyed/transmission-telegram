@@ -25,13 +25,19 @@ type Bot struct {
 	chatID     int64 // accessed atomically for thread safety
 	mdReplacer *strings.Replacer
 	commands   map[string]commandFunc
+
+	// username is the bot's own Telegram username, without the @, from
+	// GetMe; commands addressed to any other bot are ignored.
+	username string
 }
 
 // commandFunc is the handler signature for bot commands.
 type commandFunc func(ctx context.Context, ud *models.Update, args []string)
 
 // New creates a new Bot instance and performs the Telegram startup calls.
-func New(ctx context.Context, cfg *config.Config, client *transmission.TransmissionClient, logger *slog.Logger) (*Bot, error) {
+// Extra options are passed to the Telegram library; tests use them to point
+// the bot at a fake server.
+func New(ctx context.Context, cfg *config.Config, client *transmission.TransmissionClient, logger *slog.Logger, extra ...tgbot.Option) (*Bot, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -59,23 +65,25 @@ func New(ctx context.Context, cfg *config.Config, client *transmission.Transmiss
 		tgbot.WithErrorsHandler(func(err error) {
 			logger.Error("Telegram API error", "error", err)
 		}),
+		// GetMe is called below, once, so its answer can be kept.
+		tgbot.WithSkipGetMe(),
 	}
 
-	api, err := tgbot.New(cfg.BotToken, opts...)
+	api, err := tgbot.New(cfg.BotToken, append(opts, extra...)...)
 	if err != nil {
 		return nil, err
 	}
 	b.API = api
 
-	if err := clearWebhook(ctx, api); err != nil {
-		return nil, err
-	}
-
 	me, err := api.GetMe(ctx)
 	if err != nil {
-		logger.Warn("GetMe failed after Telegram initialization", "error", err)
-	} else {
-		logger.Info("Telegram bot authorized", "username", me.Username)
+		return nil, fmt.Errorf("get the bot's identity from Telegram: %w", err)
+	}
+	b.username = me.Username
+	logger.Info("Telegram bot authorized", "username", me.Username)
+
+	if err := clearWebhook(ctx, api); err != nil {
+		return nil, err
 	}
 
 	// Register command list with Telegram menu button
@@ -148,17 +156,22 @@ func (b *Bot) Start(ctx context.Context) {
 // normalizeCommand processes the raw first token of a message:
 // - detects magnet/http links
 // - strips leading "/"
-// - strips trailing "@botname" from group mentions
+// - splits off a trailing "@botname", as group commands carry, into mention
 // - lowercases the command
-func normalizeCommand(token string) (cmd string, isLink bool) {
+func normalizeCommand(token string) (cmd, mention string, isLink bool) {
 	lowerToken := strings.ToLower(token)
 	if strings.HasPrefix(lowerToken, "magnet:") || strings.HasPrefix(lowerToken, "http://") || strings.HasPrefix(lowerToken, "https://") {
-		return "add", true
+		return "add", "", true
 	}
-	token = lowerToken
-	token = strings.TrimPrefix(token, "/")
-	token = strings.Split(token, "@")[0]
-	return token, false
+	cmd, mention, _ = strings.Cut(strings.TrimPrefix(lowerToken, "/"), "@")
+	return cmd, mention, false
+}
+
+// addressedToUs reports whether a command's @mention, if any, names this bot.
+// Telegram sends a bot that sees every group message the commands meant for
+// other bots too, such as /stop@OtherBot.
+func (b *Bot) addressedToUs(mention string) bool {
+	return mention == "" || b.username == "" || strings.EqualFold(mention, b.username)
 }
 
 // handleUpdate processes incoming updates from Telegram.
@@ -196,6 +209,16 @@ func (b *Bot) handleUpdate(ctx context.Context, _ *tgbot.Bot, update *models.Upd
 		return
 	}
 
+	fields := strings.Fields(update.Message.Text)
+	var command, mention string
+	var isLink bool
+	if len(fields) > 0 {
+		command, mention, isLink = normalizeCommand(fields[0])
+		if !b.addressedToUs(mention) {
+			return
+		}
+	}
+
 	// Always store active chat ID for notifications
 	atomic.StoreInt64(&b.chatID, update.Message.Chat.ID)
 
@@ -207,7 +230,6 @@ func (b *Bot) handleUpdate(ctx context.Context, _ *tgbot.Bot, update *models.Upd
 		"has_document", update.Message.Document != nil,
 	)
 
-	fields := strings.Fields(update.Message.Text)
 	if len(fields) == 0 {
 		if update.Message.Document != nil {
 			b.receiveTorrent(ctx, update)
@@ -215,7 +237,6 @@ func (b *Bot) handleUpdate(ctx context.Context, _ *tgbot.Bot, update *models.Upd
 		return
 	}
 
-	command, isLink := normalizeCommand(fields[0])
 	var args []string
 	if isLink {
 		args = fields
