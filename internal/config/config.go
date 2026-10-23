@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dustin/go-humanize"
 )
 
 // Version is overridden by release builds. Tagged go install builds fall back
@@ -86,6 +88,12 @@ type Config struct {
 	// StateFile is where the bot keeps what it remembers; the default
 	// location when empty.
 	StateFile string
+	// WatchInterval is how often the notification watcher checks
+	// Transmission.
+	WatchInterval time.Duration
+	// LowDisk is the free space, in bytes, below which chats that want it
+	// are warned; 0 turns the warnings off.
+	LowDisk uint64
 
 	// ShowVersion asks only for the version to be printed; nothing else
 	// is validated.
@@ -130,6 +138,8 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	fs.StringVar(&cfg.TransLogFile, "transmission-logfile", "", "Deprecated and ignored: completion notifications come from Transmission's RPC")
 	fs.BoolVar(&cfg.NoLive, "no-live", false, "Don't edit and update info after sending")
 	fs.StringVar(&cfg.StateFile, "state", "", "File where the bot keeps settings such as where notifications go (env: TT_STATE; default: transmission-telegram/state.json in the user's config directory)")
+	fs.DurationVar(&cfg.WatchInterval, "watch-interval", 10*time.Second, "How often to check Transmission for notifications")
+	lowDisk := fs.String("low-disk", "5GB", "Warn the chats that want it when free space falls below this size; 0 turns it off")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "Print the version and exit")
 
 	if err := fs.Parse(args); err != nil {
@@ -169,6 +179,13 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	}
 	if len(cfg.Masters) < 1 {
 		return nil, errors.New("at least one authorized user is required (-master)")
+	}
+	if cfg.WatchInterval < time.Second {
+		return nil, errors.New("watch-interval must be at least 1s")
+	}
+	var err error
+	if cfg.LowDisk, err = humanize.ParseBytes(*lowDisk); err != nil {
+		return nil, errors.New("low-disk must be a size such as 5GB, or 0")
 	}
 	// The message leaves the URL out: it may carry credentials.
 	if u, err := url.Parse(cfg.RPCURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {

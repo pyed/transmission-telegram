@@ -81,15 +81,15 @@ func main() {
 		logger.Warn("-transmission-logfile is no longer used: Transmission 4 does not log completions at its " +
 			"default level, so notifications come from Transmission's RPC on every version; remove the flag")
 	}
-	notify.StartWatcher(ctx, cfg.Interval, func(reqCtx context.Context) (transmission.Torrents, error) {
-		return client.GetTorrents(reqCtx)
-	}, func() int64 {
-		var chatID int64
-		store.Read(func(data *state.Data) { chatID = data.LastChat })
-		return chatID
-	}, func(text string, chatID int64, markdown bool) int {
-		return b.Notify(ctx, chatID, text)
-	}, logger)
+	watcher := &notify.Watcher{
+		Transmission: client,
+		State:        store,
+		Send:         b.SendHTML,
+		Logger:       logger,
+		Interval:     cfg.WatchInterval,
+		LowDisk:      cfg.LowDisk,
+	}
+	go watcher.Run(ctx)
 
 	// Run the bot (blocks until context is cancelled)
 	b.Start(ctx)

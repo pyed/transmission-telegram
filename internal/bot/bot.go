@@ -81,11 +81,11 @@ func (b *Bot) replyError(ctx context.Context, r *request, command string, err er
 	b.reply(ctx, r, "<b>"+esc(command)+":</b> "+esc(redact.Error(err)))
 }
 
-// Notify sends text, which is plain rather than HTML, to a chat; the
+// SendHTML sends an HTML message to a chat, retrying passing failures; the
 // notification watcher uses it.
-func (b *Bot) Notify(ctx context.Context, chatID int64, text string) int {
-	messageID, _ := b.send(ctx, chatID, esc(text), nil)
-	return messageID
+func (b *Bot) SendHTML(ctx context.Context, chatID int64, text string) error {
+	_, err := b.send(ctx, chatID, text, nil)
+	return err
 }
 
 // New creates a new Bot instance and performs the Telegram startup calls.

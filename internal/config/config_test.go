@@ -271,6 +271,31 @@ func TestParseFlags_RejectsURLsThatAreNotHTTP(t *testing.T) {
 	}
 }
 
+// The watcher's interval and disk threshold have defaults, and take sizes
+// as people write them.
+func TestParseFlags_WatchSettings(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err := ParseFlags(fs, []string{"-token=t", "-master=12345"}, func(string) string { return "" })
+	if err != nil || cfg.WatchInterval != 10*time.Second || cfg.LowDisk != 5_000_000_000 {
+		t.Fatalf("defaults = %v, %d, %v", cfg.WatchInterval, cfg.LowDisk, err)
+	}
+	fs = flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err = ParseFlags(fs, []string{"-token=t", "-master=12345", "-watch-interval=1m", "-low-disk=500 MiB"}, func(string) string { return "" })
+	if err != nil || cfg.WatchInterval != time.Minute || cfg.LowDisk != 500<<20 {
+		t.Fatalf("given = %v, %d, %v", cfg.WatchInterval, cfg.LowDisk, err)
+	}
+	for _, args := range [][]string{{"-watch-interval=100ms"}, {"-low-disk=lots"}} {
+		fs = flag.NewFlagSet("test", flag.ContinueOnError)
+		if _, err := ParseFlags(fs, append([]string{"-token=t", "-master=12345"}, args...), func(string) string { return "" }); err == nil {
+			t.Errorf("%v accepted", args)
+		}
+	}
+	fs = flag.NewFlagSet("test", flag.ContinueOnError)
+	if cfg, err = ParseFlags(fs, []string{"-token=t", "-master=12345", "-low-disk=0"}, func(string) string { return "" }); err != nil || cfg.LowDisk != 0 {
+		t.Fatalf("-low-disk=0 = %d, %v", cfg.LowDisk, err)
+	}
+}
+
 // The state file comes from -state, or else TT_STATE.
 func TestParseFlags_StateFile(t *testing.T) {
 	env := func(key string) string {
