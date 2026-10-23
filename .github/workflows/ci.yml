@@ -135,7 +135,7 @@ jobs:
         if [ "${{ matrix.goos }}" = "windows" ]; then
           OUTPUT="${OUTPUT}.exe"
         fi
-        go build -trimpath -v -o "${OUTPUT}" ./cmd/bot/
+        go build -trimpath -v -o "${OUTPUT}" .
 
   container:
     name: Container Build

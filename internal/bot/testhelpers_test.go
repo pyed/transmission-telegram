@@ -11,7 +11,7 @@ import (
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/pyed/transmission"
-	"github.com/pyed/transmission-telegram/internal/config"
+	"github.com/pyed/transmission-telegram/v2/internal/config"
 )
 
 // testBotToken is a fake token used only in tests; it is not a real secret.

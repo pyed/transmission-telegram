@@ -10,9 +10,9 @@ import (
 	"syscall"
 
 	"github.com/pyed/transmission"
-	"github.com/pyed/transmission-telegram/internal/bot"
-	"github.com/pyed/transmission-telegram/internal/config"
-	"github.com/pyed/transmission-telegram/internal/notify"
+	"github.com/pyed/transmission-telegram/v2/internal/bot"
+	"github.com/pyed/transmission-telegram/v2/internal/config"
+	"github.com/pyed/transmission-telegram/v2/internal/notify"
 )
 
 func main() {

@@ -1,4 +1,4 @@
-module github.com/pyed/transmission-telegram
+module github.com/pyed/transmission-telegram/v2
 
 go 1.21
 

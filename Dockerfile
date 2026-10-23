@@ -12,8 +12,8 @@ RUN go mod download
 COPY . .
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOARM=${TARGETVARIANT#v} \
-    go build -trimpath -ldflags="-s -w -X github.com/pyed/transmission-telegram/internal/config.Version=${VERSION}" \
-    -o /transmission-telegram ./cmd/bot/
+    go build -trimpath -ldflags="-s -w -X github.com/pyed/transmission-telegram/v2/internal/config.Version=${VERSION}" \
+    -o /transmission-telegram .
 
 FROM alpine:3.24
 ARG VERSION

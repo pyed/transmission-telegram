@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/go-telegram/bot/models"
-	"github.com/pyed/transmission-telegram/internal/config"
+	"github.com/pyed/transmission-telegram/v2/internal/config"
 )
 
 // registerCommands builds the command dispatch map.

@@ -12,7 +12,7 @@ import (
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 	"github.com/pyed/transmission"
-	"github.com/pyed/transmission-telegram/internal/config"
+	"github.com/pyed/transmission-telegram/v2/internal/config"
 )
 
 // Bot manages the Telegram bot and Transmission client interaction.

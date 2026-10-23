@@ -108,7 +108,7 @@ jobs:
             fi
             
             echo "Building ${OS}/${ARCH}${EXTRA}..."
-            go build -trimpath -ldflags="-s -w -X github.com/pyed/transmission-telegram/internal/config.Version=${TAG_NAME}" -o "${TARGET_BIN}" ./cmd/bot/
+            go build -trimpath -ldflags="-s -w -X github.com/pyed/transmission-telegram/v2/internal/config.Version=${TAG_NAME}" -o "${TARGET_BIN}" .
             
             cp README.md LICENSE "${BUILD_DIR}/"
             

@@ -13,7 +13,7 @@ README how to upgrade when one is.
 
 | Path | What it holds |
 |---|---|
-| `cmd/bot/main.go` | Entry point: config, logger, Transmission client, bot, completion watcher; `safeEndpoint` keeps credentials out of logged URLs |
+| `main.go` | Entry point: config, logger, Transmission client, bot, completion watcher; `safeEndpoint` keeps credentials out of logged URLs |
 | `internal/config` | Flags and environment (`ParseFlags`), `MasterSlice` (authorized users), the `/help` text, `Version` |
 | `internal/bot/bot.go` | `Bot`, startup calls to Telegram, update dispatch (`handleUpdate`), callback buttons, panic recovery |
 | `internal/bot/handler.go` | The command map (names and aliases), `/help`, `/version` |

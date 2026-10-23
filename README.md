@@ -35,7 +35,7 @@ Download an archive for Linux, macOS, Windows, or FreeBSD from the [Releases](ht
 Go 1.21 is the tested minimum; using a current supported Go release is recommended.
 
 ```bash
-go install github.com/pyed/transmission-telegram/cmd/bot@latest
+go install github.com/pyed/transmission-telegram/v2@latest
 ```
 
 ---
