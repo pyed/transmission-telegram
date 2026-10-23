@@ -153,6 +153,32 @@ func TestSpeedLimits(t *testing.T) {
 	}
 }
 
+// head, tail and latest take a count of 1 or more; a count of 0 or less
+// used to list every torrent, live.
+func TestListCountsMustBePositive(t *testing.T) {
+	ft := newFakeTelegram(t)
+	fts := newFakeTransmission(t)
+	client, err := transmission.New(fts.URL+"/transmission/rpc", "", "")
+	if err != nil {
+		t.Fatalf("failed to create transmission client: %v", err)
+	}
+	b := newTestBot(t, ft.newBot(t), client)
+	before := fts.methodCount("torrent-get")
+
+	b.head(context.Background(), req("0"))
+	b.tail(context.Background(), req("-5"))
+	b.latest(context.Background(), req("five"))
+
+	if got := fts.methodCount("torrent-get"); got != before {
+		t.Fatalf("a refused count still listed torrents (%d requests)", got-before)
+	}
+	for i, name := range []string{"head", "tail", "latest"} {
+		if texts := ft.sentTexts(); len(texts) != 3 || !strings.HasPrefix(texts[i], "<b>"+name+":</b> give how many") {
+			t.Fatalf("replies = %q", texts)
+		}
+	}
+}
+
 func TestTurtleRejectsInvalidArgument(t *testing.T) {
 	ft := newFakeTelegram(t)
 	fts := newFakeTransmission(t)

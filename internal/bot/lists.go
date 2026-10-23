@@ -56,10 +56,7 @@ func (b *Bot) headTail(ctx context.Context, r *request, name string, fromEnd boo
 		if err != nil {
 			return "", err
 		}
-		count := n
-		if count <= 0 || count > len(torrents) {
-			count = len(torrents)
-		}
+		count := min(n, len(torrents))
 		if fromEnd {
 			torrents = torrents[len(torrents)-count:]
 		} else {
@@ -81,11 +78,8 @@ func (b *Bot) latest(ctx context.Context, r *request) {
 		b.replyError(ctx, r, "latest", err)
 		return
 	}
-	if n <= 0 || n > len(torrents) {
-		n = len(torrents)
-	}
 	torrents.SortAge(true)
-	b.replyLines(ctx, r, torrents[:n], "No torrents")
+	b.replyLines(ctx, r, torrents[:min(n, len(torrents))], "No torrents")
 }
 
 // search lists the torrents whose names contain the query, ignoring case.
@@ -176,14 +170,14 @@ func (b *Bot) active(ctx context.Context, r *request) {
 }
 
 // countArgument reads the optional count head, tail and latest take; 5
-// without one.
+// without one. A count below 1 is refused: it used to list every torrent.
 func (b *Bot) countArgument(ctx context.Context, r *request, name string) (int, bool) {
 	if len(r.args) == 0 {
 		return 5, true
 	}
 	n, err := strconv.Atoi(r.args[0])
-	if err != nil {
-		b.reply(ctx, r, "<b>"+name+":</b> argument must be a number")
+	if err != nil || n < 1 {
+		b.reply(ctx, r, "<b>"+name+":</b> give how many torrents to show, 1 or more")
 		return 0, false
 	}
 	return n, true
