@@ -467,6 +467,25 @@ func Chats(data *state.Data, kind string) []int64 {
 	return chats
 }
 
+// Describe says what a kind of notification is about; lowDisk is the
+// -low-disk limit.
+func Describe(kind string, lowDisk uint64) string {
+	switch kind {
+	case Completed:
+		return "torrents that finish downloading"
+	case Outages:
+		return "Transmission stops or starts answering"
+	case Errors:
+		return "torrents that get a new error"
+	case Disk:
+		if lowDisk == 0 {
+			return "low disk space (off: -low-disk is 0)"
+		}
+		return "free space falls below " + humanize.Bytes(lowDisk)
+	}
+	return kind
+}
+
 // KindsOf returns the kinds of notification a chat gets.
 func KindsOf(data *state.Data, chatID int64) []string {
 	if len(data.Notify) == 0 {
