@@ -2,6 +2,8 @@ package bot
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +12,7 @@ import (
 	"time"
 
 	tgbot "github.com/go-telegram/bot"
+	"github.com/pyed/transmission"
 )
 
 // add adds torrents by URL or magnet link.
@@ -19,16 +22,14 @@ func (b *Bot) add(ctx context.Context, r *request) {
 		return
 	}
 
-	for _, url := range r.args {
-		torrent, err := b.Client.AddTorrentByURL(ctx, url)
+	for _, link := range r.args {
+		torrent, duplicate, err := b.addTorrent(ctx, transmission.AddTorrentOptions{Filename: &link})
 		if err != nil {
 			b.replyError(ctx, r, "add", err)
 			continue
 		}
-
-		// An empty name means Transmission did not take the torrent.
-		if torrent == nil || torrent.Name == "" {
-			b.reply(ctx, r, "<b>add:</b> error adding "+esc(url))
+		if duplicate {
+			b.reply(ctx, r, alreadyAdded(torrent))
 			continue
 		}
 
@@ -38,6 +39,33 @@ func (b *Bot) add(ctx context.Context, r *request) {
 		}
 		b.reply(ctx, r, added)
 	}
+}
+
+// addResult is torrent-add's answer: the torrent Transmission added, or
+// the one it already had.
+type addResult struct {
+	Added     *transmission.TorrentAdded `json:"torrent-added"`
+	Duplicate *transmission.TorrentAdded `json:"torrent-duplicate"`
+}
+
+// addTorrent adds a torrent, and reports whether Transmission already had
+// it; pyed/transmission's AddTorrent answers both the same way.
+func (b *Bot) addTorrent(ctx context.Context, options transmission.AddTorrentOptions) (*transmission.TorrentAdded, bool, error) {
+	var result addResult
+	if err := b.Client.Execute(ctx, "torrent-add", options, &result); err != nil {
+		return nil, false, err
+	}
+	switch {
+	case result.Added != nil:
+		return result.Added, false, nil
+	case result.Duplicate != nil:
+		return result.Duplicate, true, nil
+	}
+	return nil, false, errors.New("transmission added nothing")
+}
+
+func alreadyAdded(torrent *transmission.TorrentAdded) string {
+	return fmt.Sprintf("<b>Already added:</b> <code>%d</code> %s", torrent.ID, esc(torrent.Name))
 }
 
 // receiveTorrent adds a .torrent file sent as a document.
@@ -65,13 +93,14 @@ func (b *Bot) receiveTorrent(ctx context.Context, r *request) {
 		return
 	}
 
-	torrent, err := b.Client.AddTorrentByData(ctx, data)
+	metainfo := base64.StdEncoding.EncodeToString(data)
+	torrent, duplicate, err := b.addTorrent(ctx, transmission.AddTorrentOptions{MetaInfo: &metainfo})
 	if err != nil {
 		b.replyError(ctx, r, "receiver", err)
 		return
 	}
-	if torrent == nil || torrent.Name == "" {
-		b.reply(ctx, r, "<b>receiver:</b> error adding torrent")
+	if duplicate {
+		b.reply(ctx, r, alreadyAdded(torrent))
 		return
 	}
 

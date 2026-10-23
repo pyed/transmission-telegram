@@ -32,6 +32,9 @@ type fakeTransmission struct {
 	// session is session-get's arguments, as JSON; just a version when
 	// empty.
 	session string
+	// addAnswer is torrent-add's arguments, as JSON; a new torrent 7 when
+	// empty.
+	addAnswer string
 }
 
 func (f *fakeTransmission) setStall(stall chan struct{}) {
@@ -69,8 +72,12 @@ func newFakeTransmission(t *testing.T) *fakeTransmission {
 		case "torrent-add":
 			f.mu.Lock()
 			f.addBodies = append(f.addBodies, string(body))
+			answer := f.addAnswer
 			f.mu.Unlock()
-			_, _ = w.Write([]byte(`{"result":"success","arguments":{"torrent-added":{"id":7,"name":"Test Torrent","hashString":"abc123"}}}`))
+			if answer == "" {
+				answer = `{"torrent-added":{"id":7,"name":"Test Torrent","hashString":"abc123"}}`
+			}
+			_, _ = fmt.Fprintf(w, `{"result":"success","arguments":%s}`, answer)
 		case "torrent-get":
 			f.mu.Lock()
 			stall := f.stall
@@ -187,6 +194,29 @@ func TestAddHonorsCanceledContext(t *testing.T) {
 
 	if got := fts.methodCount("torrent-add"); got != 0 {
 		t.Fatalf("canceled command issued %d torrent-add RPC calls", got)
+	}
+}
+
+// Transmission answers a torrent it already has with torrent-duplicate;
+// that is no new torrent, and the reply says so.
+func TestAddSaysWhenATorrentWasAlreadyThere(t *testing.T) {
+	ft := newFakeTelegram(t)
+	ft.fileBytes = fakeTorrent
+	fts := newFakeTransmission(t)
+	fts.addAnswer = `{"torrent-duplicate":{"id":3,"name":"Old <Torrent>","hashString":"abc123"}}`
+	client, err := transmission.New(fts.URL+"/transmission/rpc", "", "")
+	if err != nil {
+		t.Fatalf("failed to create transmission client: %v", err)
+	}
+	b := newTestBot(t, ft.newBot(t), client)
+
+	b.add(context.Background(), req("magnet:?xt=urn:btih:abc123"))
+	b.receiveTorrent(context.Background(), &request{chatID: 42, message: &models.Message{
+		Document: &models.Document{FileID: "test-file-id", FileName: "upload.torrent"},
+	}})
+	want := "<b>Already added:</b> <code>3</code> Old &lt;Torrent&gt;"
+	if texts := ft.sentTexts(); len(texts) != 2 || texts[0] != want || texts[1] != want {
+		t.Fatalf("replies = %q, want %q twice", texts, want)
 	}
 }
 
