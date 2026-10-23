@@ -8,6 +8,7 @@ import (
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"github.com/pyed/transmission-telegram/v2/internal/state"
 )
 
 // command is one of the bot's commands.
@@ -149,10 +150,13 @@ func (b *Bot) registerMenu(ctx context.Context) {
 	}
 	menu := menuCommands()
 	if slices.Equal(current, menu) {
+		b.rememberMenu(menu)
 		return
 	}
+	var registered []string
+	b.State.Read(func(data *state.Data) { registered = data.Menu })
 	names := commandNames(current)
-	ours := len(current) == 0 || slices.Equal(names, commandNames(menu)) ||
+	ours := len(current) == 0 || slices.Equal(names, commandNames(menu)) || slices.Equal(names, registered) ||
 		slices.ContainsFunc(earlierMenus, func(earlier []string) bool { return slices.Equal(names, earlier) })
 	if !ours {
 		b.Logger.Info("Keeping the command menu set in BotFather")
@@ -162,7 +166,23 @@ func (b *Bot) registerMenu(ctx context.Context) {
 		b.Logger.Warn("Could not set the command menu", "error", err)
 		return
 	}
+	b.rememberMenu(menu)
 	b.Logger.Info("Registered the command menu with Telegram")
+}
+
+// rememberMenu saves the commands of the menu the bot registered, so that a
+// later version, whose commands differ, can tell it from one set in
+// BotFather.
+func (b *Bot) rememberMenu(menu []models.BotCommand) {
+	names := commandNames(menu)
+	var known bool
+	b.State.Read(func(data *state.Data) { known = slices.Equal(data.Menu, names) })
+	if known {
+		return
+	}
+	if err := b.State.Update(func(data *state.Data) { data.Menu = names }); err != nil {
+		b.Logger.Warn("Could not save the command menu", "error", err)
+	}
 }
 
 func commandNames(menu []models.BotCommand) []string {

@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/go-telegram/bot/models"
 	"github.com/pyed/transmission"
+	"github.com/pyed/transmission-telegram/v2/internal/state"
 )
 
 // Every command name and alias of earlier versions still works.
@@ -101,6 +103,29 @@ func TestRegisterMenuKeepsTheOwnersMenu(t *testing.T) {
 				t.Fatalf("menu set = %v, want %v", set, tt.wantSet)
 			}
 		})
+	}
+}
+
+// The bot remembers the menu it registered, so that a later version, whose
+// commands differ, still knows that menu for its own.
+func TestRegisterMenuRemembersItsMenu(t *testing.T) {
+	ft := newFakeTelegram(t)
+	b := newTestBot(t, ft.newBot(t), nil)
+	b.registerMenu(context.Background())
+	var saved []string
+	b.State.Read(func(data *state.Data) { saved = slices.Clone(data.Menu) })
+	if !slices.Equal(saved, commandNames(menuCommands())) {
+		t.Fatalf("saved menu = %v", saved)
+	}
+
+	// A later version finds this version's menu, which it does not know.
+	ft.script("getMyCommands", `{"ok":true,"result":[{"command":"list","description":"x"},{"command":"gone","description":"y"}]}`)
+	if err := b.State.Update(func(data *state.Data) { data.Menu = []string{"list", "gone"} }); err != nil {
+		t.Fatal(err)
+	}
+	b.registerMenu(context.Background())
+	if got := ft.callCount("setMyCommands"); got != 2 {
+		t.Fatalf("the remembered menu was not replaced: %d setMyCommands calls", got)
 	}
 }
 
