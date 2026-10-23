@@ -4,7 +4,7 @@ Thanks for helping improve transmission-telegram. For a substantial behavior cha
 
 ## Development setup
 
-Install Git and Go 1.21 or newer, then clone the repository. A current supported Go release is recommended for the full verification pass.
+Install Git and Go 1.26 or newer, then clone the repository. The `toolchain` line in `go.mod` makes an older 1.26 release download the patched toolchain the project is tested with.
 
 Before submitting a change, run:
 

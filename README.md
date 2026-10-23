@@ -30,9 +30,9 @@
 
 Download an archive for Linux, macOS, Windows, or FreeBSD from the [Releases](https://github.com/pyed/transmission-telegram/releases) page. Each release includes SHA-256 checksums.
 
-### From Source (Go 1.21+)
+### From Source (Go 1.26+)
 
-Go 1.21 is the tested minimum; using a current supported Go release is recommended.
+Go 1.26 or newer is required; an older 1.26 release downloads Go 1.26.10, the first without known vulnerabilities that affect the bot.
 
 ```bash
 go install github.com/pyed/transmission-telegram/v2@latest

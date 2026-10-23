@@ -1,6 +1,6 @@
 ARG VERSION=dev
 
-FROM --platform=$BUILDPLATFORM golang:1.27.0-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS build
 
 ARG TARGETOS TARGETARCH TARGETVARIANT
 ARG VERSION
