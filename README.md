@@ -121,7 +121,7 @@ docker run -d --name transmission-telegram \
   -e TT_BOT_TOKEN="<YOUR_BOT_TOKEN>" \
   -e TR_URL="http://host.docker.internal:9091/transmission/rpc" \
   -e TR_AUTH="<username>:<password>" \
-  pyed/transmission-telegram:latest \
+  ghcr.io/pyed/transmission-telegram:latest \
   -master="<YOUR_NUMERIC_TELEGRAM_ID>"
 ```
 
@@ -160,7 +160,7 @@ services:
     restart: unless-stopped
 
   telegram-bot:
-    image: pyed/transmission-telegram:latest
+    image: ghcr.io/pyed/transmission-telegram:latest
     container_name: transmission-telegram
     depends_on:
       - transmission
