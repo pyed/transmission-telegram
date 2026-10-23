@@ -10,6 +10,8 @@ import (
 )
 
 type TorrentsProvider func(ctx context.Context) (transmission.Torrents, error)
+type ChatIDProvider func() int64
+type SendFunc func(text string, chatID int64, markdown bool) int
 
 const outageFailureThreshold = 3
 

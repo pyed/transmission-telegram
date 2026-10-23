@@ -16,7 +16,7 @@
 - ⚡ **Modern Telegram Bot Engine**: Built with [`github.com/go-telegram/bot`](https://github.com/go-telegram/bot) with native graceful shutdown, context propagation, and structured `log/slog` logging.
 - 🎛 **Interactive Inline Buttons**: Pause, resume, and delete torrents from `/info`; destructive inline deletion requires an explicit confirmation.
 - 📊 **Visual Progress Bars**: Clean Unicode progress bars (`[█████░░░░░] 50.0%`) on `/head`, `/tail`, `/active`, `/paused`, `/checking`, and `/info`.
-- 🔔 **Operational Alerts**: Receive completion notifications plus one-shot Transmission outage and recovery alerts through the default RPC watcher. Optional logfile monitoring follows file rotation and falls back to RPC polling if startup fails.
+- 🔔 **Operational Alerts**: Receive completion notifications plus one-shot Transmission outage and recovery alerts by watching Transmission over RPC, which works with Transmission running anywhere, Docker included.
 - 🐢 **Turtle Mode & Utilities**: Instant speed toggling (`/turtle`), free disk space checker (`/free`), and manual tracker re-announcing (`/reannounce`).
 - 🔒 **Flexible Authorization**: Restrict access with a repeatable `-master` list supporting Telegram usernames and stable numeric user IDs.
 - 👥 **Group Chat Ready**: Clean handling of group mentions (e.g. `/list@BotName`).
@@ -51,8 +51,8 @@ go install github.com/pyed/transmission-telegram/v2@latest
 | `-url` | `TR_URL` | Transmission RPC URL (default: `http://localhost:9091/transmission/rpc`) |
 | `-username` | `TR_AUTH` (`user:password`) | Transmission RPC username |
 | `-password` | `TR_AUTH` (`user:password`) | Transmission RPC password |
-| `-logfile` | — | Send bot logs to a file (default: stdout) |
-| `-transmission-logfile` | — | Read completion events from a local Transmission log (optional; defaults to RPC polling) |
+| `-logfile` | — | Send bot logs to a file only its owner can read, moved aside to `FILE.1` at 10 MiB (default: stdout) |
+| `-transmission-logfile` | — | Deprecated and ignored: Transmission 4 no longer logs completions at its default level, so notifications always come from RPC |
 | `-no-live` | — | Disable real-time editing and live update loops |
 
 Explicit flags override the corresponding environment defaults. Prefer numeric Telegram user IDs for `-master`; unlike usernames, they cannot be renamed or reassigned.

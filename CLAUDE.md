@@ -24,7 +24,8 @@ named `transmission-telegram`.
 | `internal/bot/handler.go` | The command map (names and aliases), `/help`, `/version` |
 | `internal/bot/commands_*.go` | Commands by area: `list` (lists), `status` (state lists), `info` (card, stats, speed, count), `manage` (add, upload, del, start/stop/check), `settings` (sort, limits, turtle, free space, reannounce) |
 | `internal/bot/send.go`, `liveupdate.go`, `format.go` | Sending and splitting messages, live edits, progress bars and tracker hosts |
-| `internal/notify` | Completion notifications: the RPC watcher (`watcher.go`) and the legacy log tailer (`tailer.go`) |
+| `internal/notify` | Completion and outage notifications from the RPC watcher (`watcher.go`); `-transmission-logfile` is accepted but ignored |
+| `internal/logfile` | `-logfile`: a 0600 log file moved aside to `FILE.1` at 10 MiB |
 
 Dependencies: `github.com/go-telegram/bot` (Telegram Bot API),
 `github.com/pyed/transmission` (the RPC client, also maintained by pyed), and

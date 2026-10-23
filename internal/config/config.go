@@ -166,7 +166,7 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	fs.StringVar(&cfg.Username, "username", "", "Transmission username (env: TR_AUTH user:password)")
 	fs.StringVar(&cfg.Password, "password", "", "Transmission password (env: TR_AUTH user:password)")
 	fs.StringVar(&cfg.LogFile, "logfile", "", "Send logs to a private file, moved aside to FILE.1 at 10 MiB")
-	fs.StringVar(&cfg.TransLogFile, "transmission-logfile", "", "Open transmission logfile to monitor torrents completion")
+	fs.StringVar(&cfg.TransLogFile, "transmission-logfile", "", "Deprecated and ignored: completion notifications come from Transmission's RPC")
 	fs.BoolVar(&cfg.NoLive, "no-live", false, "Don't edit and update info after sending")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "Print the version and exit")
 

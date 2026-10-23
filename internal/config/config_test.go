@@ -251,6 +251,19 @@ func TestParseFlags_PrefersStandardTokenEnvironment(t *testing.T) {
 	}
 }
 
+// -transmission-logfile no longer does anything, but existing service
+// definitions pass it, so it must still parse.
+func TestParseFlags_AcceptsDeprecatedTransmissionLogfile(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err := ParseFlags(fs, []string{"-token=t", "-master=12345", "-transmission-logfile=/var/log/transmission.log"}, nil)
+	if err != nil {
+		t.Fatalf("deprecated flag refused: %v", err)
+	}
+	if cfg.TransLogFile != "/var/log/transmission.log" {
+		t.Fatalf("TransLogFile = %q; main needs it to warn", cfg.TransLogFile)
+	}
+}
+
 // -version must work before the bot is configured at all.
 func TestParseFlags_VersionNeedsNoOtherSettings(t *testing.T) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)

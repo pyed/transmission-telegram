@@ -68,23 +68,15 @@ func main() {
 	}
 
 	// Start completion notifications
-	startWatcher := func() {
-		notify.StartWatcher(ctx, cfg.Interval, func(reqCtx context.Context) (transmission.Torrents, error) {
-			return client.GetTorrents(reqCtx)
-		}, b.ChatID, func(text string, chatID int64, markdown bool) int {
-			return b.Send(ctx, text, chatID, markdown)
-		}, logger)
-	}
 	if cfg.TransLogFile != "" {
-		if err := notify.StartTailer(ctx, cfg.TransLogFile, b.ChatID, func(text string, chatID int64, markdown bool) int {
-			return b.Send(ctx, text, chatID, markdown)
-		}, logger); err != nil {
-			logger.Warn("Transmission logfile unavailable; using RPC completion watcher", "error", err)
-			startWatcher()
-		}
-	} else {
-		startWatcher()
+		logger.Warn("-transmission-logfile is no longer used: Transmission 4 does not log completions at its " +
+			"default level, so notifications come from Transmission's RPC on every version; remove the flag")
 	}
+	notify.StartWatcher(ctx, cfg.Interval, func(reqCtx context.Context) (transmission.Torrents, error) {
+		return client.GetTorrents(reqCtx)
+	}, b.ChatID, func(text string, chatID int64, markdown bool) int {
+		return b.Send(ctx, text, chatID, markdown)
+	}, logger)
 
 	// Run the bot (blocks until context is cancelled)
 	b.Start(ctx)
