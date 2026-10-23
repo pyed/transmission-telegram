@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/go-telegram/bot/models"
+	"github.com/pyed/transmission"
 )
 
 // Every command name and alias of earlier versions still works.
@@ -100,6 +101,27 @@ func TestRegisterMenuKeepsTheOwnersMenu(t *testing.T) {
 				t.Fatalf("menu set = %v, want %v", set, tt.wantSet)
 			}
 		})
+	}
+}
+
+// Telegram sends a bare /start when someone opens a chat with the bot: it
+// gets the commands, not "needs an argument", and starts nothing.
+func TestBareStartListsTheCommands(t *testing.T) {
+	ft := newFakeTelegram(t)
+	fts := newFakeTransmission(t)
+	client, err := transmission.New(fts.URL+"/transmission/rpc", "", "")
+	if err != nil {
+		t.Fatalf("failed to create transmission client: %v", err)
+	}
+	b := newTestBot(t, ft.newBot(t), client)
+
+	b.start(context.Background(), req())
+	texts := ft.sentTexts()
+	if len(texts) != 1 || !strings.Contains(texts[0], "Torrent lists") || renderedLength(texts[0]) > maxMessageLength {
+		t.Fatalf("expected the commands in one message, got %q", texts)
+	}
+	if got := fts.methodCount("torrent-start"); got != 0 {
+		t.Fatalf("a bare /start started torrents (%d calls)", got)
 	}
 }
 

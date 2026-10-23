@@ -173,8 +173,14 @@ func (b *Bot) stop(ctx context.Context, r *request) {
 	b.act(ctx, r, "stop", b.Client.StopAll, b.Client.StopTorrents, "Stopped all torrents")
 }
 
-// start starts torrents, or all of them.
+// start starts torrents, or all of them. Telegram sends a bare /start when
+// someone opens a chat with the bot, which gets the list of commands.
 func (b *Bot) start(ctx context.Context, r *request) {
+	if len(r.args) == 0 {
+		b.reply(ctx, r, "This bot controls Transmission. Send it a magnet link or a .torrent file to add a torrent, "+
+			"or use a command:\n\n"+helpText())
+		return
+	}
 	b.act(ctx, r, "start", b.Client.StartAll, b.Client.StartTorrents, "Started all torrents")
 }
 
