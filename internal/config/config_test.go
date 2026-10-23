@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"flag"
 	"strings"
 	"testing"
@@ -197,6 +198,30 @@ func TestParseFlags_CredentialFlagsOverrideIndependently(t *testing.T) {
 					cfg.Username, cfg.Password, tt.wantUsername, tt.wantPassword)
 			}
 		})
+	}
+}
+
+// The usage text, which -h and every usage error print, must not show values
+// taken from the environment: they are secrets, and the text ends up in logs.
+func TestUsageDoesNotShowValuesFromEnvironment(t *testing.T) {
+	env := map[string]string{
+		"TT_BOT_TOKEN": "123456:ENV-TOKEN",
+		"TR_AUTH":      "env-user:env-password",
+		"TR_URL":       "http://url-user:url-password@transmission:9091/transmission/rpc",
+	}
+	var usage strings.Builder
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	fs.SetOutput(&usage)
+	if _, err := ParseFlags(fs, []string{"-h"}, func(key string) string { return env[key] }); !errors.Is(err, flag.ErrHelp) {
+		t.Fatalf("-h returned %v, want flag.ErrHelp", err)
+	}
+	for _, value := range []string{"ENV-TOKEN", "env-user", "env-password", "url-user", "url-password"} {
+		if strings.Contains(usage.String(), value) {
+			t.Errorf("usage shows %q from the environment:\n%s", value, usage.String())
+		}
+	}
+	if !strings.Contains(usage.String(), "TT_BOT_TOKEN") {
+		t.Errorf("usage no longer names TT_BOT_TOKEN:\n%s", usage.String())
 	}
 }
 

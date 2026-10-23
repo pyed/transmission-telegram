@@ -98,6 +98,9 @@ func (masters MasterSlice) Contains(username string, userID int64) bool {
 	return false
 }
 
+// defaultRPCURL is where Transmission answers RPC out of the box.
+const defaultRPCURL = "http://localhost:9091/transmission/rpc"
+
 type Config struct {
 	BotToken     string
 	Masters      MasterSlice
@@ -136,30 +139,41 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 		Interval: 5 * time.Second,
 		Duration: 10,
 	}
-	tokenDefault := strings.TrimSpace(getenv("TT_BOT_TOKEN"))
-	if tokenDefault == "" {
-		tokenDefault = strings.TrimSpace(getenv("TT_BOTT"))
-	}
-	rpcURLDefault := strings.TrimSpace(getenv("TR_URL"))
-	if rpcURLDefault == "" {
-		rpcURLDefault = "http://localhost:9091/transmission/rpc"
-	}
-	authUsernameDefault, authPasswordDefault := "", ""
-	if values := strings.SplitN(getenv("TR_AUTH"), ":", 2); len(values) == 2 {
-		authUsernameDefault, authPasswordDefault = values[0], values[1]
-	}
 
-	fs.StringVar(&cfg.BotToken, "token", tokenDefault, "Telegram bot token (env: TT_BOT_TOKEN or legacy TT_BOTT)")
+	// Values from the environment are applied after parsing rather than as
+	// flag defaults: flag defaults are printed by -h and after every usage
+	// error, which would put the token and passwords in logs.
+	fs.StringVar(&cfg.BotToken, "token", "", "Telegram bot token (env: TT_BOT_TOKEN or legacy TT_BOTT)")
 	fs.Var(&cfg.Masters, "master", "Telegram username or numeric user ID allowed to use the bot; repeatable")
-	fs.StringVar(&cfg.RPCURL, "url", rpcURLDefault, "Transmission RPC URL (env: TR_URL)")
-	fs.StringVar(&cfg.Username, "username", authUsernameDefault, "Transmission username (env: TR_AUTH user:password)")
-	fs.StringVar(&cfg.Password, "password", authPasswordDefault, "Transmission password (env: TR_AUTH user:password)")
+	fs.StringVar(&cfg.RPCURL, "url", defaultRPCURL, "Transmission RPC URL (env: TR_URL)")
+	fs.StringVar(&cfg.Username, "username", "", "Transmission username (env: TR_AUTH user:password)")
+	fs.StringVar(&cfg.Password, "password", "", "Transmission password (env: TR_AUTH user:password)")
 	fs.StringVar(&cfg.LogFile, "logfile", "", "Send logs to a file")
 	fs.StringVar(&cfg.TransLogFile, "transmission-logfile", "", "Open transmission logfile to monitor torrents completion")
 	fs.BoolVar(&cfg.NoLive, "no-live", false, "Don't edit and update info after sending")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
+	}
+
+	given := make(map[string]bool)
+	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
+	if !given["token"] {
+		cfg.BotToken = getenv("TT_BOT_TOKEN")
+		if strings.TrimSpace(cfg.BotToken) == "" {
+			cfg.BotToken = getenv("TT_BOTT")
+		}
+	}
+	if url := strings.TrimSpace(getenv("TR_URL")); !given["url"] && url != "" {
+		cfg.RPCURL = url
+	}
+	if username, password, ok := strings.Cut(getenv("TR_AUTH"), ":"); ok {
+		if !given["username"] {
+			cfg.Username = username
+		}
+		if !given["password"] {
+			cfg.Password = password
+		}
 	}
 
 	cfg.BotToken = strings.TrimSpace(cfg.BotToken)
