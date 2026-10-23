@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
     branches: [ master, main, dev ]
+  schedule:
+    # Weekly, so newly published vulnerabilities and toolchain problems
+    # surface even when nothing is pushed.
+    - cron: '23 5 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -20,12 +25,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
-        go-version: [ '1.21.13', '1.26.7' ]
-        exclude:
-          # Go 1.21's internal linker omits LC_UUID, which current macOS
-          # runners require before they will execute test binaries.
-          - os: macos-latest
-            go-version: '1.21.13'
+        go-version: [ '1.26.10', '1.27.3' ]
 
     steps:
     - name: Checkout repository
@@ -43,7 +43,7 @@ jobs:
       run: go mod verify
 
     - name: Check formatting and module tidiness
-      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.26.7'
+      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.27.3'
       shell: bash
       run: |
         unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
@@ -55,7 +55,7 @@ jobs:
       run: go vet ./...
 
     - name: Run static analysis
-      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.26.7'
+      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.27.3'
       run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.1 ./...
 
     - name: Run unit tests
@@ -74,12 +74,20 @@ jobs:
           exit "${test_status}"
         fi
 
+    - name: Run unit tests as a 32-bit program
+      # Release archives include 386 and 32-bit ARM builds.
+      if: matrix.os == 'ubuntu-latest'
+      env:
+        GOARCH: '386'
+        CGO_ENABLED: '0'
+      run: go test -count=1 ./...
+
     - name: Run race detector
-      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.26.7'
+      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.27.3'
       run: go test -race ./...
 
     - name: Scan reachable dependencies for vulnerabilities
-      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.26.7'
+      if: matrix.os == 'ubuntu-latest'
       run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 
   build:
@@ -122,7 +130,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
-        go-version: '1.26.7'
+        go-version: '1.27.3'
 
     - name: Build binary
       env:
