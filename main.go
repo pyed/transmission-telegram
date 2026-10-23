@@ -81,7 +81,7 @@ func main() {
 	notify.StartWatcher(ctx, cfg.Interval, func(reqCtx context.Context) (transmission.Torrents, error) {
 		return client.GetTorrents(reqCtx)
 	}, b.ChatID, func(text string, chatID int64, markdown bool) int {
-		return b.Send(ctx, text, chatID, markdown)
+		return b.Notify(ctx, chatID, text)
 	}, logger)
 
 	// Run the bot (blocks until context is cancelled)

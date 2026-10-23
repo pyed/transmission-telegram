@@ -15,6 +15,7 @@ import (
 	"github.com/go-telegram/bot/models"
 	"github.com/pyed/transmission"
 	"github.com/pyed/transmission-telegram/v2/internal/config"
+	"github.com/pyed/transmission-telegram/v2/internal/redact"
 )
 
 // Bot manages the Telegram bot and Transmission client interaction.
@@ -24,17 +25,49 @@ type Bot struct {
 	Config *config.Config
 	Logger *slog.Logger
 
-	chatID     int64 // accessed atomically for thread safety
-	mdReplacer *strings.Replacer
-	commands   map[string]commandFunc
+	chatID   int64 // accessed atomically for thread safety
+	commands map[string]commandFunc
 
 	// username is the bot's own Telegram username, without the @, from
 	// GetMe; commands addressed to any other bot are ignored.
 	username string
+
+	// retryDelay is the first wait before a failed Telegram request is
+	// tried again; a second when zero. Tests shorten it.
+	retryDelay time.Duration
+}
+
+// request is a command to carry out: the chat it came from, its arguments,
+// and the message that carried it.
+type request struct {
+	chatID  int64
+	args    []string
+	message *models.Message
 }
 
 // commandFunc is the handler signature for bot commands.
-type commandFunc func(ctx context.Context, ud *models.Update, args []string)
+type commandFunc func(ctx context.Context, r *request)
+
+// reply sends an HTML reply to the request's chat. It returns the
+// message's ID, or 0 when the reply was not one message; failures are
+// logged.
+func (b *Bot) reply(ctx context.Context, r *request, text string) int {
+	messageID, _ := b.send(ctx, r.chatID, text, nil)
+	return messageID
+}
+
+// replyError tells the request's chat that the command failed, and why,
+// without any credentials a request URL in err carries.
+func (b *Bot) replyError(ctx context.Context, r *request, command string, err error) {
+	b.reply(ctx, r, "<b>"+esc(command)+":</b> "+esc(redact.Error(err)))
+}
+
+// Notify sends text, which is plain rather than HTML, to a chat; the
+// notification watcher uses it.
+func (b *Bot) Notify(ctx context.Context, chatID int64, text string) int {
+	messageID, _ := b.send(ctx, chatID, esc(text), nil)
+	return messageID
+}
 
 // New creates a new Bot instance and performs the Telegram startup calls.
 // Extra options are passed to the Telegram library; tests use them to point
@@ -51,13 +84,6 @@ func New(ctx context.Context, cfg *config.Config, client *transmission.Transmiss
 		Client: client,
 		Config: cfg,
 		Logger: logger,
-		mdReplacer: strings.NewReplacer(
-			"*", "•",
-			"[", "(",
-			"]", ")",
-			"_", "-",
-			"`", "'",
-		),
 	}
 	b.registerCommands()
 
@@ -272,29 +298,29 @@ func (b *Bot) handleUpdate(ctx context.Context, _ *tgbot.Bot, update *models.Upd
 		"has_document", update.Message.Document != nil,
 	)
 
+	r := &request{chatID: update.Message.Chat.ID, message: update.Message}
 	if len(fields) == 0 {
 		if update.Message.Document != nil {
-			b.receiveTorrent(ctx, update)
+			b.receiveTorrent(ctx, r)
 		}
 		return
 	}
 
-	var args []string
 	if isLink {
-		args = fields
+		r.args = fields
 	} else {
-		args = fields[1:]
+		r.args = fields[1:]
 	}
 
-	b.Logger.Info("Dispatching command", "command", command, "arg_count", len(args), "sender", username)
+	b.Logger.Info("Dispatching command", "command", command, "arg_count", len(r.args), "sender", username)
 
 	if handler, ok := b.commands[command]; ok {
-		handler(ctx, update, args)
+		handler(ctx, r)
 	} else if command == "" {
-		b.receiveTorrent(ctx, update)
+		b.receiveTorrent(ctx, r)
 	} else {
 		b.Logger.Warn("Unknown command", "sender", username, "user_id", userID)
-		b.Send(ctx, "No such command, try /help", update.Message.Chat.ID, false)
+		b.reply(ctx, r, "No such command, try /help")
 	}
 }
 

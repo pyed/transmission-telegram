@@ -2,10 +2,8 @@ package bot
 
 import (
 	"context"
-	"strings"
 	"time"
 
-	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
@@ -60,14 +58,8 @@ func (b *Bot) liveUpdateWithKeyboard(ctx context.Context, chatID int64, msgID in
 }
 
 func (b *Bot) editLiveMessage(ctx context.Context, chatID int64, msgID int, text string, markup models.ReplyMarkup) bool {
-	_, err := b.API.EditMessageText(ctx, &tgbot.EditMessageTextParams{
-		ChatID:      chatID,
-		MessageID:   msgID,
-		Text:        text,
-		ParseMode:   models.ParseModeMarkdownV1,
-		ReplyMarkup: markup,
-	})
-	if err == nil || strings.Contains(strings.ToLower(err.Error()), "message is not modified") {
+	err := b.edit(ctx, chatID, msgID, text, markup)
+	if err == nil {
 		return true
 	}
 	if ctx.Err() == nil {

@@ -31,23 +31,6 @@ func TestBot_ChatID(t *testing.T) {
 	}
 }
 
-func TestBot_MarkdownReplacer(t *testing.T) {
-	replacer := strings.NewReplacer(
-		"*", "•",
-		"[", "(",
-		"]", ")",
-		"_", "-",
-		"`", "'",
-	)
-
-	input := "[Torrent_Name] *2026* `1080p`"
-	expected := "(Torrent-Name) •2026• '1080p'"
-	got := replacer.Replace(input)
-	if got != expected {
-		t.Errorf("expected %q, got %q", expected, got)
-	}
-}
-
 func TestBot_CommandRegistration(t *testing.T) {
 	b := &Bot{
 		Config: &config.Config{},
@@ -166,15 +149,15 @@ func TestCommandsForOtherBotsAreIgnored(t *testing.T) {
 func TestNewWaitsForTelegram(t *testing.T) {
 	shortenStartupDelay(t)
 	ft := newFakeTelegram(t)
-	ft.getMeAnswers = []string{
+	ft.script("getMe",
 		`{"ok":false,"error_code":502,"description":"Bad Gateway"}`,
 		`<html>502 Bad Gateway</html>`,
-	}
+	)
 	cfg := &config.Config{BotToken: testBotToken}
 	if _, err := New(context.Background(), cfg, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), tgbot.WithServerURL(ft.URL)); err != nil {
 		t.Fatalf("New gave up on a passing failure: %v", err)
 	}
-	if got := ft.getMes(); got != 3 {
+	if got := ft.callCount("getMe"); got != 3 {
 		t.Fatalf("expected two failed getMe calls and a third that worked, got %d calls", got)
 	}
 }
@@ -184,13 +167,13 @@ func TestNewWaitsForTelegram(t *testing.T) {
 func TestNewStopsWhenTelegramRefusesTheToken(t *testing.T) {
 	shortenStartupDelay(t)
 	ft := newFakeTelegram(t)
-	ft.getMeAnswers = []string{`{"ok":false,"error_code":401,"description":"Unauthorized"}`}
+	ft.script("getMe", `{"ok":false,"error_code":401,"description":"Unauthorized"}`)
 	cfg := &config.Config{BotToken: testBotToken}
 	_, err := New(context.Background(), cfg, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), tgbot.WithServerURL(ft.URL))
 	if err == nil || !strings.Contains(err.Error(), "refused the bot token") {
 		t.Fatalf("expected a refused-token error, got %v", err)
 	}
-	if got := ft.getMes(); got != 1 {
+	if got := ft.callCount("getMe"); got != 1 {
 		t.Fatalf("retried a refused token: %d getMe calls", got)
 	}
 }
@@ -198,7 +181,7 @@ func TestNewStopsWhenTelegramRefusesTheToken(t *testing.T) {
 // Shutting down while Telegram is unreachable ends the wait.
 func TestNewStopsWaitingWhenCanceled(t *testing.T) {
 	ft := newFakeTelegram(t)
-	ft.getMeAnswers = []string{`{"ok":false,"error_code":502,"description":"Bad Gateway"}`}
+	ft.script("getMe", `{"ok":false,"error_code":502,"description":"Bad Gateway"}`)
 	ctx, cancel := context.WithCancel(context.Background())
 	restore := startupDelay
 	startupDelay = func(int) time.Duration {

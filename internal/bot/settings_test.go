@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-telegram/bot/models"
 	"github.com/pyed/transmission"
 )
 
-func sortUpdate() *models.Update {
-	return &models.Update{Message: &models.Message{Chat: models.Chat{ID: 42}}}
+// req is a command with args from chat 42.
+func req(args ...string) *request {
+	return &request{chatID: 42, args: args}
 }
 
 // TestSortRevWithoutKeyDoesNotPanic is a regression test: "/sort rev" used
@@ -21,7 +21,7 @@ func TestSortRevWithoutKeyDoesNotPanic(t *testing.T) {
 	ft := newFakeTelegram(t)
 	b := newTestBot(t, ft.newBot(t), nil)
 
-	b.sort(context.Background(), sortUpdate(), []string{"rev"})
+	b.sort(context.Background(), req("rev"))
 
 	texts := ft.sentTexts()
 	if len(texts) == 0 {
@@ -43,13 +43,13 @@ func TestSortRevSizeStillWorks(t *testing.T) {
 	}
 	b := newTestBot(t, ft.newBot(t), client)
 
-	b.sort(context.Background(), sortUpdate(), []string{"rev", "size"})
+	b.sort(context.Background(), req("rev", "size"))
 
 	texts := ft.sentTexts()
 	if len(texts) == 0 {
 		t.Fatal("expected a confirmation reply, got none")
 	}
-	if last := texts[len(texts)-1]; last != "*sort:* reversed size" {
+	if last := texts[len(texts)-1]; last != "<b>sort:</b> reversed size" {
 		t.Errorf("unexpected reply %q", last)
 	}
 }
@@ -79,13 +79,13 @@ func TestTrackersCountsDistinctTorrentsInStableOrder(t *testing.T) {
 	}
 	b := newTestBot(t, ft.newBot(t), client)
 
-	b.trackers(context.Background(), sortUpdate(), nil)
+	b.trackers(context.Background(), req())
 
 	texts := ft.sentTexts()
 	if len(texts) == 0 {
 		t.Fatal("expected tracker response")
 	}
-	const want = "2 - tracker.example.com\n1 - z.example.net\n"
+	const want = "2 - tracker.example.com\n1 - z.example.net"
 	if got := texts[len(texts)-1]; got != want {
 		t.Fatalf("tracker response = %q, want %q", got, want)
 	}
@@ -100,8 +100,8 @@ func TestPathCommandsPreserveSpaces(t *testing.T) {
 	}
 	b := newTestBot(t, ft.newBot(t), client)
 
-	b.downloaddir(context.Background(), sortUpdate(), []string{"/media/My", "Downloads"})
-	b.free(context.Background(), sortUpdate(), []string{"/media/My", "Downloads"})
+	b.downloaddir(context.Background(), req("/media/My", "Downloads"))
+	b.free(context.Background(), req("/media/My", "Downloads"))
 
 	for _, method := range []string{"session-set", "free-space"} {
 		bodies := fts.requestBodies(method)
@@ -121,13 +121,13 @@ func TestTurtleRejectsInvalidArgument(t *testing.T) {
 	b := newTestBot(t, ft.newBot(t), client)
 	baselineSessionGets := fts.methodCount("session-get")
 
-	b.turtle(context.Background(), sortUpdate(), []string{"maybe"})
+	b.turtle(context.Background(), req("maybe"))
 
 	if got := fts.methodCount("session-get"); got != baselineSessionGets {
 		t.Fatalf("invalid turtle argument performed an RPC: before=%d after=%d", baselineSessionGets, got)
 	}
 	texts := ft.sentTexts()
-	if len(texts) == 0 || texts[len(texts)-1] != "*turtle:* expected on or off" {
+	if len(texts) == 0 || texts[len(texts)-1] != "<b>turtle:</b> expected on or off" {
 		t.Fatalf("unexpected turtle response: %v", texts)
 	}
 }

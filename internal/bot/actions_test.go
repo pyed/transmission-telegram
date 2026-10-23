@@ -116,14 +116,10 @@ func TestReceiveTorrentDoesNotLeakToken(t *testing.T) {
 
 	b := newTestBot(t, ft.newBot(t), client)
 
-	ud := &models.Update{
-		Message: &models.Message{
-			Chat:     models.Chat{ID: 42},
-			Document: &models.Document{FileID: "test-file-id", FileName: "upload.torrent"},
-		},
-	}
-
-	b.receiveTorrent(context.Background(), ud)
+	b.receiveTorrent(context.Background(), &request{chatID: 42, message: &models.Message{
+		Chat:     models.Chat{ID: 42},
+		Document: &models.Document{FileID: "test-file-id", FileName: "upload.torrent"},
+	}})
 
 	// 1. Transmission must have received exactly one torrent-add.
 	adds := fts.addRequests()
@@ -161,11 +157,9 @@ func TestAddHonorsCanceledContext(t *testing.T) {
 		t.Fatalf("failed to create transmission client: %v", err)
 	}
 	b := newTestBot(t, ft.newBot(t), client)
-	ud := &models.Update{Message: &models.Message{Chat: models.Chat{ID: 42}}}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	b.add(ctx, ud, []string{"https://example.com/test.torrent"})
+	b.add(ctx, req("https://example.com/test.torrent"))
 
 	if got := fts.methodCount("torrent-add"); got != 0 {
 		t.Fatalf("canceled command issued %d torrent-add RPC calls", got)

@@ -1,13 +1,5 @@
 package bot
 
-import (
-	"context"
-	"fmt"
-
-	"github.com/go-telegram/bot/models"
-	"github.com/pyed/transmission-telegram/v2/internal/config"
-)
-
 // registerCommands builds the command dispatch map.
 // All existing command names and aliases are preserved.
 func (b *Bot) registerCommands() {
@@ -44,17 +36,4 @@ func (b *Bot) registerCommands() {
 		"help":    b.help,
 		"version": b.version, "ver": b.version,
 	}
-}
-
-func (b *Bot) help(ctx context.Context, ud *models.Update, args []string) {
-	b.Send(ctx, config.Help, ud.Message.Chat.ID, true)
-}
-
-func (b *Bot) version(ctx context.Context, ud *models.Update, args []string) {
-	session, err := b.Client.GetSession(ctx)
-	if err != nil {
-		b.Send(ctx, "*version:* "+err.Error(), ud.Message.Chat.ID, false)
-		return
-	}
-	b.Send(ctx, fmt.Sprintf("Transmission *%s*\nTransmission-telegram *%s*", session.Version, config.Version), ud.Message.Chat.ID, true)
 }
