@@ -55,7 +55,8 @@ func cardKeyboard(t *transmission.Torrent, back bool) *models.InlineKeyboardMark
 	}
 	rows := [][]models.InlineKeyboardButton{
 		{{Text: "⏸ Pause", CallbackData: data("stop")}, {Text: "▶ Resume", CallbackData: data("start")}, {Text: "🔄 Refresh", CallbackData: data("refresh")}},
-		{{Text: "✔ Verify", CallbackData: data("verify")}, {Text: "📡 Reannounce", CallbackData: data("reannounce")}},
+		{{Text: "✔ Verify", CallbackData: data("verify")}, {Text: "📡 Reannounce", CallbackData: data("reannounce")},
+			{Text: "📂 Files", CallbackData: fmt.Sprintf("fl:%d:%s:0", t.ID, torrentFingerprint(t.HashString))}},
 		{{Text: "🗑 Remove", CallbackData: data("remove")}, {Text: "💣 Remove + data", CallbackData: data("removedata")}},
 	}
 	if back {

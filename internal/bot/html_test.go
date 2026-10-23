@@ -86,7 +86,8 @@ func TestRepliesAreValidHTMLAndShowNamesExactly(t *testing.T) {
 	commands := [][]string{
 		{"list"}, {"list", "tracker.example"}, {"list", "<nothing>"}, {"head"}, {"tail", "1"}, {"latest"},
 		{"search", "show>"}, {"search", "<none & nothing>"}, {"downs"}, {"seeding"}, {"paused"}, {"checking"},
-		{"errors"}, {"active"}, {"info", "1"}, {"info", "<x>"}, {"stats"}, {"speed"}, {"count"}, {"trackers"},
+		{"errors"}, {"active"}, {"info", "1"}, {"info", "<x>"}, {"files", "1"}, {"files", "<x>"},
+		{"stats"}, {"speed"}, {"count"}, {"trackers"},
 		{"version"}, {"help"}, {"sort"}, {"sort", "rev", "size"}, {"sort", "<bad>"}, {"downloaddir", "/media/<a & b>"},
 		{"downlimit", "100"}, {"uplimit", "x<"}, {"turtle", "on"}, {"free", "/media/<a & b>"}, {"reannounce", "all"},
 		{"add", "magnet:?xt=urn:btih:<x>&dn=a"}, {"stop", "1", "<x>"}, {"start", "all"}, {"check", "1"},

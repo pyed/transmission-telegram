@@ -52,7 +52,7 @@ func TestCardKeyboard(t *testing.T) {
 		}
 	}
 	want := "a:stop:42:0123456789abcdef a:start:42:0123456789abcdef a:refresh:42:0123456789abcdef " +
-		"a:verify:42:0123456789abcdef a:reannounce:42:0123456789abcdef " +
+		"a:verify:42:0123456789abcdef a:reannounce:42:0123456789abcdef fl:42:0123456789abcdef:0 " +
 		"a:remove:42:0123456789abcdef a:removedata:42:0123456789abcdef"
 	if got := strings.Join(data, " "); got != want {
 		t.Fatalf("buttons = %s\nwant %s", got, want)

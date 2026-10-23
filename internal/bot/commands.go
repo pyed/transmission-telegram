@@ -44,6 +44,7 @@ func commandTable() []commandSection {
 			{"latest", []string{"la"}, "[n]", "List the n newest torrents (5)", (*Bot).latest},
 			{"search", []string{"se"}, "<words>", "Find torrents by name", (*Bot).search},
 			{"info", []string{"in"}, "<id…>", "Show torrents' details, with buttons", (*Bot).info},
+			{"files", []string{"fi"}, "<id>", "List a torrent's files, to skip them or change their priority", (*Bot).files},
 		}},
 		{"Torrent control", []command{
 			{"add", []string{"ad"}, "<link…>", "Add torrents from links or magnets; or send a .torrent file", (*Bot).add},
