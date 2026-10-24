@@ -66,6 +66,8 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, cb *models.CallbackQuery)
 		b.confirmDeletion(ctx, p)
 	case "fl", "fo", "fs", "fa", "c":
 		b.filesPress(ctx, p)
+	case "sr":
+		b.refreshStatus(ctx, p)
 	case "cmd":
 		b.legacyPress(ctx, p)
 	default:

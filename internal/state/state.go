@@ -1,6 +1,6 @@
 // Package state keeps what the bot remembers across restarts in a JSON
-// file: where notifications go, each chat's sort order, which torrents were
-// not done yet, and the command menu it registered.
+// file: where notifications go, each chat's sort order and status message,
+// which torrents were not done yet, and the command menu it registered.
 package state
 
 import (
@@ -38,6 +38,8 @@ type Data struct {
 	// Menu is the commands of the menu the bot last registered, so that it
 	// can tell its own menu from one set in BotFather.
 	Menu []string `json:"menu,omitempty"`
+	// Status holds the message ID of each chat's status message (/status).
+	Status map[int64]int `json:"status,omitempty"`
 }
 
 // Store holds Data and saves it after every update. A Store without a path

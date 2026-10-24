@@ -60,6 +60,7 @@ func commandTable() []commandSection {
 			{"deldata", nil, "<id…> [confirm]", "Remove torrents and delete their data, after asking", (*Bot).deldata},
 		}},
 		{"Session and settings", []command{
+			{"status", nil, "[off]", "Pin a status message that stays up to date", (*Bot).status},
 			{"speed", []string{"ss"}, "", "Show the current speeds, updating live", (*Bot).speed},
 			{"stats", []string{"sa"}, "", "Show session and total statistics", (*Bot).stats},
 			{"count", []string{"co"}, "", "Count torrents in each state", (*Bot).count},

@@ -58,6 +58,11 @@ type Bot struct {
 	// toldIDs are the users told their ID in setup mode.
 	setupMu sync.Mutex
 	toldIDs map[int64]bool
+
+	// statusMu keeps /status and the status updates from crossing.
+	statusMu sync.Mutex
+	// now is the clock; time.Now when nil. Tests set it.
+	now func() time.Time
 }
 
 // chatQueueSize is how many updates of one chat may wait for its handler.
@@ -214,6 +219,7 @@ func clearWebhook(ctx context.Context, api *tgbot.Bot) error {
 
 // Start starts the bot polling loop (blocks until context is cancelled).
 func (b *Bot) Start(ctx context.Context) {
+	b.launch(ctx, "status messages", b.watchStatus)
 	b.API.Start(ctx)
 	b.wg.Wait()
 }

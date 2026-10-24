@@ -54,7 +54,7 @@ go install github.com/pyed/transmission-telegram/v2@latest
 | `-logfile` | — | Send bot logs to a file only its owner can read, moved aside to `FILE.1` at 10 MiB (default: stdout) |
 | `-transmission-logfile` | — | Deprecated and ignored: Transmission 4 no longer logs completions at its default level, so notifications always come from RPC |
 | `-no-live` | — | Disable real-time editing and live update loops |
-| `-state` | `TT_STATE` | File where the bot keeps what it remembers: where notifications go, each chat's sort order, which torrents were not done (default: `transmission-telegram/state.json` in the user's config directory; `/config/state.json` in the Docker image) |
+| `-state` | `TT_STATE` | File where the bot keeps what it remembers: where notifications go, each chat's sort order and status message, which torrents were not done (default: `transmission-telegram/state.json` in the user's config directory; `/config/state.json` in the Docker image) |
 | `-watch-interval` | — | How often to check Transmission for notifications (default: `10s`) |
 | `-low-disk` | — | Free space below which chats that chose `disk` notifications are warned (default: `5GB`; `0` turns it off) |
 | `-version` | — | Print the version and exit |
@@ -116,6 +116,7 @@ transmission-telegram \
 | `/port` | — | Check whether peers can reach Transmission's port |
 | `/free [path]` | `/space`, `/disk` | Show free and total disk space on the download drive |
 | `/reannounce <id...\|all>` | `/ra` | Force tracker re-announce |
+| `/status [off]` | — | Pin a message that shows speeds and limits, this session's totals, torrents at work, and free space, updated every minute and by its 🔄 button; `off` stops it |
 | `/speed` | `/ss` | Display current download and upload speeds |
 | `/stats` | `/sa` | Show Transmission session and cumulative statistics |
 | `/downlimit [KB/s\|off]` | `/dl` | Show or set the global download speed limit; `0` or `off` removes it |

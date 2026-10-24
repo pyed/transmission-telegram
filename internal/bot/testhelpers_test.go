@@ -35,6 +35,7 @@ type fakeTelegram struct {
 	callbackTexts []string
 	textEditCalls int
 	edits         [][2]string // message ID and text of each text edit
+	pins          []string    // message ID and disable_notification of each pin
 	fileBytes     []byte
 	lastMessageID int
 
@@ -121,7 +122,16 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"file_id":"test-file-id","file_path":"bots/123456/upload.torrent"}}`))
 		case "getMe":
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":123456,"is_bot":true,"first_name":"Transmission","username":"` + testBotUsername + `"}}`))
+		case "pinChatMessage":
+			f.mu.Lock()
+			f.pins = append(f.pins, r.FormValue("message_id")+" "+r.FormValue("disable_notification"))
+			f.mu.Unlock()
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
 		case "getMyCommands":
+			_, _ = w.Write([]byte(`{"ok":true,"result":[]}`))
+		case "getUpdates":
+			// No updates; a moment's wait keeps polling from spinning.
+			time.Sleep(10 * time.Millisecond)
 			_, _ = w.Write([]byte(`{"ok":true,"result":[]}`))
 		case "getWebhookInfo":
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"url":"","has_custom_certificate":false,"pending_update_count":0}}`))
@@ -201,6 +211,13 @@ func (f *fakeTelegram) callbackAnswers() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.callbackTexts...)
+}
+
+// sentPins returns each pin's message ID and disable_notification, in order.
+func (f *fakeTelegram) sentPins() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.pins...)
 }
 
 func (f *fakeTelegram) textEdits() int {
