@@ -18,14 +18,16 @@ named `transmission-telegram`.
 
 | Path | What it holds |
 |---|---|
-| `main.go` | Entry point: config, logger, Transmission client, bot, completion watcher |
+| `main.go` | Entry point: `run` does what the config asks: print the version, `-install`/`-uninstall`, or run the bot (logger, Transmission client, bot, completion watcher); `checkConnections` tries the settings for `-install` |
 | `internal/redact` | `URL` and `Error` keep credentials and query tokens out of logged URLs and request errors |
-| `internal/config` | Flags and environment (`ParseFlags`), `MasterSlice` (authorized users), `Version` |
+| `internal/config` | Flags, the config file (`-config`, `file.go`) and the environment (`ParseFlags`: flags win over the file, the file over the environment); `Settings`, which `-install` saves; `MasterSlice` (authorized users); `Version` |
+| `internal/service` | `-install`/`-uninstall`: a systemd unit (Linux), launchd job (macOS), or Windows service that runs `-config FILE`; `Run` runs the bot under the Windows service manager. Tests use a fake `host` rooted in a temporary directory |
 | `internal/bot/bot.go` | `Bot`, `New` (startup calls to Telegram, retried), `request`, `reply`, update dispatch (`dispatch`, `serveChat`, `handleUpdate`), panic recovery, `SendHTML`/`OpenButton` for the watcher |
 | `internal/bot/buttons.go` | The button router (`handleCallbackQuery`): verbs, v2.x `cmd:` buttons (`legacyPress`), `pressedTorrent`, `editPressed`, `answerCallback` |
 | `internal/bot/card.go` | The torrent card: `cardFields`, `cardKeyboard`, actions (`a:`), removal (`y:`/`n:`), `sendCard`, `torrentFingerprint` |
 | `internal/bot/screens.go` | Paged lists: `listing`, `listPage`, `replyList`, and the `screenStore` of the last 500 list and question messages (`pg:`, `back`) |
 | `internal/bot/files.go` | `/files` and its buttons (`fl:`, `fo:`, `fs:`, `fa:`, `c:`) |
+| `internal/bot/status.go`, `digest.go` | `/status` (a pinned message updated every minute; `sr` button) and `/digest` (a summary every day, week, or month, its traffic from Transmission's cumulative statistics); both are saved in the state and run in the background from `Start` |
 | `internal/bot/labels.go`, `queue.go`, `turtle.go` | `/labels` and `/setlabel` (RPC 16, Transmission 3.00), `/queue` and `/port`, `/turtle` with its schedule and limits |
 | `internal/bot/commands.go` | `commandTable`: every command's name, aliases, arguments and help; dispatch, `/help` and the Telegram menu are generated from it |
 | `internal/bot/telegram.go` | Sending: HTML helpers (`esc`, `plainText`), UTF-16 lengths, chunking between lines, the `.txt` fallback, `retryTelegram`, `edit` |
@@ -33,13 +35,13 @@ named `transmission-telegram`.
 | `internal/bot/lists.go`, `info.go`, `session.go`, `settings.go`, `actions.go` | Commands by what they do |
 | `internal/bot/live.go` | Live edits of the head, tail, active, speed and info replies |
 | `internal/notify` | The `Watcher`: checks Transmission every `-watch-interval` and announces completions, outages, new errors and low disk space; `Kinds`, `Chats` and `KindsOf` say which chats get what. `-transmission-logfile` is accepted but ignored |
-| `internal/state` | The state file (`-state`/`TT_STATE`): `Data` is everything the bot remembers (last chat, `/notify` choices, sorts, incomplete torrents, menu); `Store.Update` saves atomically, 0600 |
+| `internal/state` | The state file (`-state`/`TT_STATE`): `Data` is everything the bot remembers (last chat, `/notify` choices, sorts, incomplete torrents, menu, status messages, digests); `Store.Update` saves atomically, 0600 |
 | `internal/bot/notify.go`, `sorting.go` | `/notify`; each chat's sort order and `b.torrents` |
 | `internal/logfile` | `-logfile`: a 0600 log file moved aside to `FILE.1` at 10 MiB |
 
 Dependencies: `github.com/go-telegram/bot` (Telegram Bot API),
-`github.com/pyed/transmission` (the RPC client, also maintained by pyed), and
-`github.com/dustin/go-humanize`.
+`github.com/pyed/transmission` (the RPC client, also maintained by pyed),
+`github.com/dustin/go-humanize`, and `golang.org/x/sys` (the Windows service).
 
 ## Commands
 
@@ -119,6 +121,9 @@ before piping test output into `tail` or `grep`, or a failure can hide.
   breaking the code they guard.
 - Timing-based tests use generous margins and run `-count=30` once before
   committing.
+- Background loops (`watchStatus`, `watchDigest`) start in `Start` through
+  `b.launch`, look once at once and then every minute; tests call
+  `checkStatus`/`checkDigest` directly, with the clock set through `b.now`.
 
 ## Transmission facts (verified in its source)
 
