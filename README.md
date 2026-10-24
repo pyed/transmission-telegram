@@ -42,12 +42,12 @@ go install github.com/pyed/transmission-telegram/v2@latest
 
 ## Configuration
 
-`transmission-telegram` is configured via command-line flags or environment variables:
+`transmission-telegram` is configured with command-line flags, a config file, or environment variables:
 
 | Flag | Environment Variable | Description |
 |---|---|---|
 | `-token` | `TT_BOT_TOKEN` (`TT_BOTT` legacy) | Telegram bot token (*required*) |
-| `-master` | `TT_MASTERS` (comma-separated) | Authorized Telegram user ID or username (*required*, repeatable); `1` alone is a setup mode that tells whoever writes to the bot their user ID |
+| `-master` | `TT_MASTERS` (comma-separated) | Authorized Telegram user ID or username (*required*; repeatable, or separated by commas); `1` alone is a setup mode that tells whoever writes to the bot their user ID |
 | `-url` | `TR_URL` | Transmission RPC URL (default: `http://localhost:9091/transmission/rpc`) |
 | `-username` | `TR_AUTH` (`user:password`) | Transmission RPC username |
 | `-password` | `TR_AUTH` (`user:password`) | Transmission RPC password |
@@ -57,9 +57,21 @@ go install github.com/pyed/transmission-telegram/v2@latest
 | `-state` | `TT_STATE` | File where the bot keeps what it remembers: where notifications go, each chat's sort order, status message and digest, which torrents were not done (default: `transmission-telegram/state.json` in the user's config directory; `/config/state.json` in the Docker image) |
 | `-watch-interval` | — | How often to check Transmission for notifications (default: `10s`) |
 | `-low-disk` | — | Free space below which chats that chose `disk` notifications are warned (default: `5GB`; `0` turns it off) |
+| `-config` | — | Read settings from a file (see below) |
 | `-version` | — | Print the version and exit |
 
-Explicit flags override the corresponding environment defaults. Prefer numeric Telegram user IDs for `-master`; unlike usernames, they cannot be renamed or reassigned.
+Flags given on the command line win over a config file, and the file over environment variables. Prefer numeric Telegram user IDs for `-master`; unlike usernames, they cannot be renamed or reassigned.
+
+A config file holds a flag name and its value per line, without quotes; a true-or-false flag may stand alone, and lines starting with `#` are comments. Since it holds the bot token, make it readable only by you (`chmod 600`); the bot warns at startup when others can read it.
+
+```ini
+# transmission-telegram -config /path/to/transmission-telegram.conf
+token = 123456789:replace-with-your-token
+master = 123456789
+url = http://localhost:9091/transmission/rpc
+username = transmission
+password = replace-with-the-password
+```
 
 ### Notifications
 

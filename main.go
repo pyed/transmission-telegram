@@ -53,6 +53,9 @@ func main() {
 			"who would then control this bot; use numeric user IDs instead (/whoami shows yours)",
 			"usernames", usernames)
 	}
+	for _, warning := range cfg.Warnings {
+		logger.Warn(warning)
+	}
 	if cfg.Masters.Setup() {
 		logger.Warn("The only master is the placeholder 1, so the bot tells anyone who writes to it their user ID; " +
 			"restart it with yours as -master or TT_MASTERS")

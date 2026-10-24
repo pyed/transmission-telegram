@@ -34,12 +34,19 @@ func (masters *MasterSlice) String() string {
 	return fmt.Sprintf("%s", *masters)
 }
 
-func (masters *MasterSlice) Set(master string) error {
-	master = strings.TrimSpace(master)
-	if strings.Trim(master, "@") == "" {
+// Set adds a master, or several separated by commas or spaces, as
+// TT_MASTERS and config files give them.
+func (masters *MasterSlice) Set(value string) error {
+	fields := strings.FieldsFunc(value, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
+	if len(fields) == 0 {
 		return errors.New("master cannot be empty")
 	}
-	*masters = append(*masters, strings.ToLower(master))
+	for _, master := range fields {
+		if strings.Trim(master, "@") == "" {
+			return errors.New("master cannot be empty")
+		}
+		*masters = append(*masters, strings.ToLower(master))
+	}
 	return nil
 }
 
@@ -105,6 +112,13 @@ type Config struct {
 	// are warned; 0 turns the warnings off.
 	LowDisk uint64
 
+	// ConfigFile is the file given with -config, which settings not given
+	// as flags were read from.
+	ConfigFile string
+	// Warnings are problems with the settings worth logging, such as a
+	// config file other users may read.
+	Warnings []string
+
 	// ShowVersion asks only for the version to be printed; nothing else
 	// is validated.
 	ShowVersion bool
@@ -112,7 +126,8 @@ type Config struct {
 
 func Parse() *Config {
 	flag.Usage = func() {
-		fmt.Fprint(os.Stderr, "Usage: transmission-telegram <-token=TOKEN> <-master=@tuser|123456789> [-master=@yuser2] [-url=http://] [-username=user] [-password=pass]\n\n")
+		fmt.Fprint(os.Stderr, "Usage: transmission-telegram <-token=TOKEN> <-master=123456789> [-master=987654321] [-url=http://] [-username=user] [-password=pass]\n"+
+			"       transmission-telegram -config=FILE\n\n")
 		flag.PrintDefaults()
 	}
 
@@ -140,7 +155,7 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	// flag defaults: flag defaults are printed by -h and after every usage
 	// error, which would put the token and passwords in logs.
 	fs.StringVar(&cfg.BotToken, "token", "", "Telegram bot token (env: TT_BOT_TOKEN or legacy TT_BOTT)")
-	fs.Var(&cfg.Masters, "master", "Telegram user ID or username allowed to use the bot; repeatable (env: TT_MASTERS, separated by commas)")
+	fs.Var(&cfg.Masters, "master", "Telegram user ID or username allowed to use the bot; repeatable, or separated by commas (env: TT_MASTERS)")
 	fs.StringVar(&cfg.RPCURL, "url", defaultRPCURL, "Transmission RPC URL (env: TR_URL)")
 	fs.StringVar(&cfg.Username, "username", "", "Transmission username (env: TR_AUTH user:password)")
 	fs.StringVar(&cfg.Password, "password", "", "Transmission password (env: TR_AUTH user:password)")
@@ -150,6 +165,8 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	fs.StringVar(&cfg.StateFile, "state", "", "File where the bot keeps settings such as where notifications go (env: TT_STATE; default: transmission-telegram/state.json in the user's config directory)")
 	fs.DurationVar(&cfg.WatchInterval, "watch-interval", 10*time.Second, "How often to check Transmission for notifications")
 	lowDisk := fs.String("low-disk", "5GB", "Warn the chats that want it when free space falls below this size; 0 turns it off")
+	fs.StringVar(&cfg.ConfigFile, "config", "", "Read settings from this file: a flag name and its value per line, such as token = 123:abc; "+
+		"flags win over the file, and the file over the environment")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "Print the version and exit")
 
 	if err := fs.Parse(args); err != nil {
@@ -157,6 +174,15 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	}
 	if cfg.ShowVersion {
 		return cfg, nil
+	}
+	if cfg.ConfigFile != "" {
+		warning, err := applyConfigFile(fs, cfg.ConfigFile)
+		if err != nil {
+			return nil, err
+		}
+		if warning != "" {
+			cfg.Warnings = append(cfg.Warnings, warning)
+		}
 	}
 
 	given := make(map[string]bool)
@@ -185,17 +211,15 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	cfg.BotToken = strings.TrimSpace(cfg.BotToken)
 	cfg.RPCURL = strings.TrimSpace(cfg.RPCURL)
 	if cfg.BotToken == "" {
-		return nil, errors.New("telegram bot token is required (-token or TT_BOT_TOKEN)")
+		return nil, errors.New("telegram bot token is required (-token, a config file, or TT_BOT_TOKEN)")
 	}
-	if !given["master"] {
-		for _, master := range strings.FieldsFunc(getenv("TT_MASTERS"), func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
-			if err := cfg.Masters.Set(master); err != nil {
-				return nil, err
-			}
+	if masters := getenv("TT_MASTERS"); !given["master"] && strings.TrimSpace(masters) != "" {
+		if err := cfg.Masters.Set(masters); err != nil {
+			return nil, err
 		}
 	}
 	if len(cfg.Masters) < 1 {
-		return nil, errors.New("at least one authorized user is required (-master or TT_MASTERS); start with -master=1 to have the bot tell you your user ID")
+		return nil, errors.New("at least one authorized user is required (-master, a config file, or TT_MASTERS); start with -master=1 to have the bot tell you your user ID")
 	}
 	if cfg.WatchInterval < time.Second {
 		return nil, errors.New("watch-interval must be at least 1s")
