@@ -1,10 +1,14 @@
 package bot
 
 import (
+	"fmt"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/pyed/transmission"
 )
 
@@ -47,4 +51,128 @@ func trackerHosts(trackers []transmission.Tracker) []string {
 	}
 	sort.Strings(hosts)
 	return hosts
+}
+
+// statusIcon shows a torrent's state at a glance.
+func statusIcon(t *transmission.Torrent) string {
+	if t.Error != transmission.ErrorNone {
+		return "⚠️"
+	}
+	switch t.Status {
+	case transmission.StatusStopped:
+		return "⏸"
+	case transmission.StatusCheckPending, transmission.StatusChecking:
+		return "🔍"
+	case transmission.StatusDownloadPending, transmission.StatusSeedPending:
+		return "⏳"
+	case transmission.StatusDownloading:
+		return "⬇️"
+	case transmission.StatusSeeding:
+		return "⬆️"
+	}
+	return "❔"
+}
+
+// percent formats a fraction as a percentage with one decimal: "45.3%".
+func percent(fraction float64) string {
+	return strconv.FormatFloat(fraction*100, 'f', 1, 64) + "%"
+}
+
+// size formats a number of bytes: "1.2 GB".
+func size(bytes uint64) string {
+	return humanize.Bytes(bytes)
+}
+
+// rate formats a speed in bytes per second: "3.4 MB/s".
+func rate(bytesPerSecond uint64) string {
+	return humanize.Bytes(bytesPerSecond) + "/s"
+}
+
+// ratio formats an upload ratio. Transmission reports -1 when there is
+// none yet and -2 for an infinite one.
+func ratio(value float64) string {
+	switch {
+	case value == -2:
+		return "∞"
+	case value < 0:
+		return "–"
+	}
+	return strconv.FormatFloat(value, 'f', 2, 64)
+}
+
+// eta formats Transmission's estimate in seconds; it reports -1 when there
+// is none, as for a torrent that is not downloading, and -2 when it cannot
+// tell.
+func eta(seconds time.Duration) string {
+	switch {
+	case seconds == -2:
+		return "∞"
+	case seconds < 0:
+		return "–"
+	}
+	return (seconds * time.Second).String()
+}
+
+// date formats a Unix time in the bot's time zone.
+func date(unix int64) string {
+	if unix <= 0 {
+		return "–"
+	}
+	return time.Unix(unix, 0).Format("2006-01-02 15:04")
+}
+
+// torrentLine is a torrent in a list: the ID that commands take, its state,
+// how far it is while not done, and its name.
+func torrentLine(t *transmission.Torrent) string {
+	line := fmt.Sprintf("<code>%d</code> %s ", t.ID, statusIcon(t))
+	if t.PercentDone < 1 {
+		line += percent(t.PercentDone) + " "
+	}
+	return line + esc(t.Name)
+}
+
+// speeds shows a torrent's transfer, or dashes once a message showing it is
+// no longer updated.
+func speeds(t *transmission.Torrent, live bool) string {
+	if !live {
+		return "↓ – · ↑ –"
+	}
+	return "↓ " + rate(t.RateDownload) + " · ↑ " + rate(t.RateUpload)
+}
+
+// torrentBlock is a torrent with its progress and transfer, as head, tail
+// and active show it.
+func torrentBlock(t *transmission.Torrent, live bool) string {
+	return fmt.Sprintf("<code>%d</code> %s <b>%s</b>\n%s %s · %s · %s of %s\n%s · ratio %s",
+		t.ID, statusIcon(t), esc(t.Name),
+		progressBar(t.PercentDone, 10), percent(t.PercentDone), esc(t.TorrentStatus()), size(t.Have()), size(t.SizeWhenDone),
+		speeds(t, live), ratio(t.UploadRatio))
+}
+
+// torrentCard is everything info shows about a torrent.
+func torrentCard(t *transmission.Torrent, live bool) string {
+	trackers := strings.Join(trackerHosts(t.Trackers), " ")
+	if trackers == "" {
+		trackers = "–"
+	}
+	estimate := eta(t.Eta)
+	if !live {
+		estimate = "–"
+	}
+	card := fmt.Sprintf("<code>%d</code> %s <b>%s</b>\n%s %s · %s · %s of %s\n%s · ratio %s\n"+
+		"Peers: %d, %d sending to us, %d getting from us · ETA %s\n"+
+		"Downloaded %s · Uploaded %s\nAdded %s\nFolder: <code>%s</code>\nTrackers: <code>%s</code>",
+		t.ID, statusIcon(t), esc(t.Name),
+		progressBar(t.PercentDone, 10), percent(t.PercentDone), esc(t.TorrentStatus()), size(t.Have()), size(t.SizeWhenDone),
+		speeds(t, live), ratio(t.UploadRatio),
+		t.PeersConnected, t.PeersSendingToUs, t.PeersGettingFromUs, estimate,
+		size(t.DownloadedEver), size(t.UploadedEver), date(t.AddedDate),
+		esc(t.DownloadDir), esc(trackers))
+	if len(t.Labels) > 0 {
+		card += "\nLabels: " + esc(strings.Join(t.Labels, ", "))
+	}
+	if t.Error != transmission.ErrorNone && t.ErrorString != "" {
+		card += "\n⚠️ " + esc(t.ErrorString)
+	}
+	return card
 }

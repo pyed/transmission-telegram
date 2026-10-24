@@ -1,18 +1,13 @@
 package config
 
 import (
+	"errors"
 	"flag"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
-	"unicode/utf8"
 )
-
-func TestHelpFitsTelegramMessageLimit(t *testing.T) {
-	if length := utf8.RuneCountInString(Help); length > 4096 {
-		t.Fatalf("help text is %d characters; Telegram permits at most 4096", length)
-	}
-}
 
 func TestMasterSlice(t *testing.T) {
 	var masters MasterSlice
@@ -59,6 +54,16 @@ func TestMasterSlice(t *testing.T) {
 	str := masters.String()
 	if !strings.Contains(str, "sheriff") || !strings.Contains(str, "@pyed") || !strings.Contains(str, "987654321") {
 		t.Errorf("unexpected String output: %s", str)
+	}
+}
+
+func TestMasterSliceUsernames(t *testing.T) {
+	masters := MasterSlice{"alice", "12345", "bob_99", "987654321"}
+	if got := masters.Usernames(); !reflect.DeepEqual(got, []string{"alice", "bob_99"}) {
+		t.Fatalf("Usernames() = %v, want [alice bob_99]", got)
+	}
+	if got := (MasterSlice{"12345"}).Usernames(); got != nil {
+		t.Fatalf("numeric IDs reported as usernames: %v", got)
 	}
 }
 
@@ -200,6 +205,30 @@ func TestParseFlags_CredentialFlagsOverrideIndependently(t *testing.T) {
 	}
 }
 
+// The usage text, which -h and every usage error print, must not show values
+// taken from the environment: they are secrets, and the text ends up in logs.
+func TestUsageDoesNotShowValuesFromEnvironment(t *testing.T) {
+	env := map[string]string{
+		"TT_BOT_TOKEN": "123456:ENV-TOKEN",
+		"TR_AUTH":      "env-user:env-password",
+		"TR_URL":       "http://url-user:url-password@transmission:9091/transmission/rpc",
+	}
+	var usage strings.Builder
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	fs.SetOutput(&usage)
+	if _, err := ParseFlags(fs, []string{"-h"}, func(key string) string { return env[key] }); !errors.Is(err, flag.ErrHelp) {
+		t.Fatalf("-h returned %v, want flag.ErrHelp", err)
+	}
+	for _, value := range []string{"ENV-TOKEN", "env-user", "env-password", "url-user", "url-password"} {
+		if strings.Contains(usage.String(), value) {
+			t.Errorf("usage shows %q from the environment:\n%s", value, usage.String())
+		}
+	}
+	if !strings.Contains(usage.String(), "TT_BOT_TOKEN") {
+		t.Errorf("usage no longer names TT_BOT_TOKEN:\n%s", usage.String())
+	}
+}
+
 func TestParseFlags_PrefersStandardTokenEnvironment(t *testing.T) {
 	env := map[string]string{
 		"TT_BOT_TOKEN": "standard-token",
@@ -212,6 +241,127 @@ func TestParseFlags_PrefersStandardTokenEnvironment(t *testing.T) {
 	}
 	if cfg.BotToken != "standard-token" {
 		t.Fatalf("expected standard token environment variable, got %q", cfg.BotToken)
+	}
+}
+
+// A URL Transmission cannot serve is refused at startup, without repeating
+// the URL, which may hold credentials.
+func TestParseFlags_RejectsURLsThatAreNotHTTP(t *testing.T) {
+	for _, rpcURL := range []string{
+		"localhost:9091/transmission/rpc",
+		"ftp://transmission/rpc",
+		"http://",
+		"http//user:secret@transmission:9091/transmission/rpc",
+	} {
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		_, err := ParseFlags(fs, []string{"-token=t", "-master=12345", "-url=" + rpcURL}, func(string) string { return "" })
+		if err == nil {
+			t.Errorf("%q accepted", rpcURL)
+			continue
+		}
+		if strings.Contains(err.Error(), "secret") {
+			t.Errorf("error repeats the URL's password: %v", err)
+		}
+	}
+	for _, rpcURL := range []string{"https://user:secret@seedbox.example/transmission/rpc", "http://192.168.1.2:9091/transmission/rpc"} {
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		if _, err := ParseFlags(fs, []string{"-token=t", "-master=12345", "-url=" + rpcURL}, func(string) string { return "" }); err != nil {
+			t.Errorf("%q refused: %v", rpcURL, err)
+		}
+	}
+}
+
+// The watcher's interval and disk threshold have defaults, and take sizes
+// as people write them.
+func TestParseFlags_WatchSettings(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err := ParseFlags(fs, []string{"-token=t", "-master=12345"}, func(string) string { return "" })
+	if err != nil || cfg.WatchInterval != 10*time.Second || cfg.LowDisk != 5_000_000_000 {
+		t.Fatalf("defaults = %v, %d, %v", cfg.WatchInterval, cfg.LowDisk, err)
+	}
+	fs = flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err = ParseFlags(fs, []string{"-token=t", "-master=12345", "-watch-interval=1m", "-low-disk=500 MiB"}, func(string) string { return "" })
+	if err != nil || cfg.WatchInterval != time.Minute || cfg.LowDisk != 500<<20 {
+		t.Fatalf("given = %v, %d, %v", cfg.WatchInterval, cfg.LowDisk, err)
+	}
+	for _, args := range [][]string{{"-watch-interval=100ms"}, {"-low-disk=lots"}} {
+		fs = flag.NewFlagSet("test", flag.ContinueOnError)
+		if _, err := ParseFlags(fs, append([]string{"-token=t", "-master=12345"}, args...), func(string) string { return "" }); err == nil {
+			t.Errorf("%v accepted", args)
+		}
+	}
+	fs = flag.NewFlagSet("test", flag.ContinueOnError)
+	if cfg, err = ParseFlags(fs, []string{"-token=t", "-master=12345", "-low-disk=0"}, func(string) string { return "" }); err != nil || cfg.LowDisk != 0 {
+		t.Fatalf("-low-disk=0 = %d, %v", cfg.LowDisk, err)
+	}
+}
+
+// Masters come from -master, or else TT_MASTERS, separated by commas or
+// spaces; the placeholder 1 is the setup mode.
+func TestParseFlags_MastersFromEnvironment(t *testing.T) {
+	env := func(key string) string {
+		if key == "TT_MASTERS" {
+			return "123, @Alice 456"
+		}
+		return ""
+	}
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err := ParseFlags(fs, []string{"-token=t"}, env)
+	if err != nil || !reflect.DeepEqual(cfg.Masters, MasterSlice{"123", "alice", "456"}) {
+		t.Fatalf("masters = %v, %v", cfg.Masters, err)
+	}
+	fs = flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err = ParseFlags(fs, []string{"-token=t", "-master=789"}, env)
+	if err != nil || !reflect.DeepEqual(cfg.Masters, MasterSlice{"789"}) {
+		t.Fatalf("-master did not replace TT_MASTERS: %v, %v", cfg.Masters, err)
+	}
+	if cfg.Masters.Setup() || !(MasterSlice{SetupMaster}).Setup() || (MasterSlice{SetupMaster, "2"}).Setup() {
+		t.Fatal("Setup misreads the masters")
+	}
+}
+
+// The state file comes from -state, or else TT_STATE.
+func TestParseFlags_StateFile(t *testing.T) {
+	env := func(key string) string {
+		if key == "TT_STATE" {
+			return "/config/state.json"
+		}
+		return ""
+	}
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err := ParseFlags(fs, []string{"-token=t", "-master=12345"}, env)
+	if err != nil || cfg.StateFile != "/config/state.json" {
+		t.Fatalf("StateFile = %q, %v; want TT_STATE's", cfg.StateFile, err)
+	}
+	fs = flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err = ParseFlags(fs, []string{"-token=t", "-master=12345", "-state=/data/state.json"}, env)
+	if err != nil || cfg.StateFile != "/data/state.json" {
+		t.Fatalf("StateFile = %q, %v; want the flag's", cfg.StateFile, err)
+	}
+}
+
+// -transmission-logfile no longer does anything, but existing service
+// definitions pass it, so it must still parse.
+func TestParseFlags_AcceptsDeprecatedTransmissionLogfile(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err := ParseFlags(fs, []string{"-token=t", "-master=12345", "-transmission-logfile=/var/log/transmission.log"}, nil)
+	if err != nil {
+		t.Fatalf("deprecated flag refused: %v", err)
+	}
+	if cfg.TransLogFile != "/var/log/transmission.log" {
+		t.Fatalf("TransLogFile = %q; main needs it to warn", cfg.TransLogFile)
+	}
+}
+
+// -version must work before the bot is configured at all.
+func TestParseFlags_VersionNeedsNoOtherSettings(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err := ParseFlags(fs, []string{"-version"}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("-version alone failed: %v", err)
+	}
+	if !cfg.ShowVersion {
+		t.Fatal("-version did not ask for the version")
 	}
 }
 

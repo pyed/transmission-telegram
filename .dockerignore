@@ -7,7 +7,9 @@
 .env
 .env.*
 !.env.example
+CLAUDE.md
 CONTRIBUTING.md
+HANDOFF.md
 SECURITY.md
 README.md
 demo.gif
