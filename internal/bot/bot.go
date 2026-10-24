@@ -84,11 +84,19 @@ func (b *Bot) replyError(ctx context.Context, r *request, command string, err er
 	b.reply(ctx, r, "<b>"+esc(command)+":</b> "+esc(redact.Error(err)))
 }
 
-// SendHTML sends an HTML message to a chat, retrying passing failures; the
-// notification watcher uses it.
-func (b *Bot) SendHTML(ctx context.Context, chatID int64, text string) error {
-	_, err := b.send(ctx, chatID, text, nil)
+// SendHTML sends an HTML message to a chat, with markup unless it is nil,
+// retrying passing failures; the notification watcher uses it.
+func (b *Bot) SendHTML(ctx context.Context, chatID int64, text string, markup models.ReplyMarkup) error {
+	_, err := b.send(ctx, chatID, text, markup)
 	return err
+}
+
+// OpenButton is a button that sends a torrent's card, for notifications.
+// It carries all it needs, so it works however old the notification is.
+func OpenButton(id int, hash string) models.ReplyMarkup {
+	return &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
+		{Text: "🔎 Open", CallbackData: fmt.Sprintf("t:%d:%s", id, torrentFingerprint(hash))},
+	}}}
 }
 
 // New creates a new Bot instance and performs the Telegram startup calls.

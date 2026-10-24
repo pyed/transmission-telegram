@@ -166,6 +166,17 @@ func TestEarlierVersionsButtons(t *testing.T) {
 	}
 }
 
+// A notification's Open button sends the torrent's card, however old the
+// notification is.
+func TestNotificationButtonsOpenCards(t *testing.T) {
+	b, ft, _ := buttonBot(t)
+	markup := OpenButton(7, testHash).(*models.InlineKeyboardMarkup)
+	b.handleCallbackQuery(context.Background(), pressOn(1234, markup.InlineKeyboard[0][0].CallbackData))
+	if texts := ft.sentTexts(); len(texts) != 1 || !strings.Contains(texts[0], "<b>Test &lt;Torrent&gt;</b>") {
+		t.Fatalf("the button sent %q", texts)
+	}
+}
+
 // /deldata asks first, naming the torrents and their sizes; Yes deletes
 // them with their data, once, and only those still the same torrents.
 func TestDeldataAsksFirst(t *testing.T) {

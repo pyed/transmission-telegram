@@ -15,6 +15,7 @@ import (
 
 	"github.com/dustin/go-humanize"
 	tgbot "github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 	"github.com/pyed/transmission"
 	"github.com/pyed/transmission-telegram/v2/internal/redact"
 	"github.com/pyed/transmission-telegram/v2/internal/state"
@@ -81,8 +82,8 @@ type Transmission interface {
 	FreeSpace(ctx context.Context, path string) (freeBytes, totalBytes int64, err error)
 }
 
-// Sender sends an HTML message to a chat.
-type Sender func(ctx context.Context, chatID int64, text string) error
+// Sender sends an HTML message to a chat, with markup unless it is nil.
+type Sender func(ctx context.Context, chatID int64, text string, markup models.ReplyMarkup) error
 
 // Watcher checks Transmission every Interval and tells the chats that want
 // them about what happened. Run it once.
@@ -96,6 +97,9 @@ type Watcher struct {
 	// LowDisk is the free space, in bytes, below which chats that want them
 	// get a warning; 0 turns the warnings off.
 	LowDisk uint64
+	// Open, when set, gives a notification about one torrent a button that
+	// opens the torrent's card.
+	Open func(id int, hash string) models.ReplyMarkup
 
 	now func() time.Time // tests set the clock
 
@@ -121,6 +125,7 @@ type Watcher struct {
 type pendingMessage struct {
 	chatID int64
 	text   string
+	markup models.ReplyMarkup
 	since  time.Time
 }
 
@@ -228,7 +233,7 @@ func (w *Watcher) check(ctx context.Context) {
 	w.initialized = true
 
 	if len(finishedAway) > 0 {
-		w.announce(ctx, Completed, listed("✅ <b>Finished while the bot was away:</b>", finishedAway))
+		w.announce(ctx, Completed, listed("✅ <b>Finished while the bot was away:</b>", finishedAway), nil)
 	}
 	w.announceCompleted(ctx, completed)
 	w.announceErrors(ctx, failing)
@@ -264,7 +269,7 @@ func (w *Watcher) forget(hash string) {
 // or one for them all when many finished together, as after a recheck.
 func (w *Watcher) announceCompleted(ctx context.Context, completed transmission.Torrents) {
 	if len(completed) > maxSingleEvents {
-		w.announce(ctx, Completed, listed(fmt.Sprintf("✅ <b>%d torrents finished:</b>", len(completed)), completed))
+		w.announce(ctx, Completed, listed(fmt.Sprintf("✅ <b>%d torrents finished:</b>", len(completed)), completed), nil)
 		return
 	}
 	for _, t := range completed {
@@ -272,7 +277,7 @@ func (w *Watcher) announceCompleted(ctx context.Context, completed transmission.
 		if t.SizeWhenDone > 0 {
 			text += " (" + humanize.Bytes(t.SizeWhenDone) + ")"
 		}
-		w.announce(ctx, Completed, text)
+		w.announce(ctx, Completed, text, w.open(t))
 	}
 }
 
@@ -293,10 +298,10 @@ func (w *Watcher) announceErrors(ctx context.Context, failing transmission.Torre
 		group := groups[message]
 		reason := "<i>" + html.EscapeString(message) + "</i>"
 		if len(group) == 1 {
-			w.announce(ctx, Errors, fmt.Sprintf("⚠️ <b>Error:</b> <code>%d</code> %s\n%s", group[0].ID, html.EscapeString(group[0].Name), reason))
+			w.announce(ctx, Errors, fmt.Sprintf("⚠️ <b>Error:</b> <code>%d</code> %s\n%s", group[0].ID, html.EscapeString(group[0].Name), reason), w.open(group[0]))
 			continue
 		}
-		w.announce(ctx, Errors, listed(fmt.Sprintf("⚠️ <b>%d torrents have an error:</b> %s", len(group), reason), group))
+		w.announce(ctx, Errors, listed(fmt.Sprintf("⚠️ <b>%d torrents have an error:</b> %s", len(group), reason), group), nil)
 	}
 }
 
@@ -347,7 +352,7 @@ func (w *Watcher) unanswered(ctx context.Context, err error) {
 		w.Logger.Warn("Notification watcher lost contact with Transmission", "error", redact.Error(err))
 	}
 	if w.failures >= outageFailureThreshold && !w.outageNotified {
-		w.outageNotified = w.announce(ctx, Outages, html.EscapeString(outageMessage)) > 0
+		w.outageNotified = w.announce(ctx, Outages, html.EscapeString(outageMessage), nil) > 0
 	}
 }
 
@@ -356,7 +361,7 @@ func (w *Watcher) answered(ctx context.Context) {
 	if w.failures >= outageFailureThreshold {
 		w.Logger.Info("Notification watcher reconnected to Transmission")
 		if w.outageNotified {
-			w.announce(ctx, Outages, html.EscapeString(recoveryMessage))
+			w.announce(ctx, Outages, html.EscapeString(recoveryMessage), nil)
 		}
 	}
 	w.failures = 0
@@ -382,22 +387,30 @@ func (w *Watcher) checkDisk(ctx context.Context, now time.Time) {
 	case uint64(free) < w.LowDisk && !w.diskLow:
 		w.diskLow = true
 		w.announce(ctx, Disk, fmt.Sprintf("💾 <b>Low disk space:</b> %s free in <code>%s</code>, below %s",
-			humanize.Bytes(uint64(free)), html.EscapeString(session.DownloadDir), humanize.Bytes(w.LowDisk)))
+			humanize.Bytes(uint64(free)), html.EscapeString(session.DownloadDir), humanize.Bytes(w.LowDisk)), nil)
 	case uint64(free) >= w.LowDisk+w.LowDisk/10:
 		w.diskLow = false
 	}
 }
 
-// announce sends text to the chats that want notifications of kind, and
-// returns how many there were.
-func (w *Watcher) announce(ctx context.Context, kind, text string) int {
+// announce sends text, with markup unless it is nil, to the chats that want
+// notifications of kind, and returns how many there were.
+func (w *Watcher) announce(ctx context.Context, kind, text string, markup models.ReplyMarkup) int {
 	chats := w.chatsFor(kind)
 	for _, chatID := range chats {
-		if err := w.Send(ctx, chatID, text); err != nil {
-			w.sendFailed(chatID, text, err, w.clock())
+		if err := w.Send(ctx, chatID, text, markup); err != nil {
+			w.sendFailed(pendingMessage{chatID: chatID, text: text, markup: markup, since: w.clock()}, err)
 		}
 	}
 	return len(chats)
+}
+
+// open is the button that opens t's card, or nil without Open.
+func (w *Watcher) open(t *transmission.Torrent) models.ReplyMarkup {
+	if w.Open == nil {
+		return nil
+	}
+	return w.Open(t.ID, t.HashString)
 }
 
 func (w *Watcher) chatsFor(kind string) []int64 {
@@ -408,16 +421,16 @@ func (w *Watcher) chatsFor(kind string) []int64 {
 
 // sendFailed keeps a notification Telegram did not take, unless it refused
 // it for good, to send again at the next check.
-func (w *Watcher) sendFailed(chatID int64, text string, err error, since time.Time) {
+func (w *Watcher) sendFailed(message pendingMessage, err error) {
 	if refused(err) {
-		w.Logger.Warn("Telegram refused a notification", "chat_id", chatID, "error", err)
+		w.Logger.Warn("Telegram refused a notification", "chat_id", message.chatID, "error", err)
 		return
 	}
 	if len(w.pending) >= maxPending {
-		w.Logger.Warn("Dropping a notification Telegram did not take: too many are waiting", "chat_id", chatID)
+		w.Logger.Warn("Dropping a notification Telegram did not take: too many are waiting", "chat_id", message.chatID)
 		return
 	}
-	w.pending = append(w.pending, pendingMessage{chatID: chatID, text: text, since: since})
+	w.pending = append(w.pending, message)
 }
 
 // resendPending tries the notifications Telegram did not take again, in
@@ -429,7 +442,7 @@ func (w *Watcher) resendPending(ctx context.Context, now time.Time) {
 		if now.Sub(message.since) > pendingLifetime {
 			continue
 		}
-		if err := w.Send(ctx, message.chatID, message.text); err != nil {
+		if err := w.Send(ctx, message.chatID, message.text, message.markup); err != nil {
 			if refused(err) {
 				continue
 			}

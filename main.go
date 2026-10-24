@@ -85,6 +85,7 @@ func main() {
 		Transmission: client,
 		State:        store,
 		Send:         b.SendHTML,
+		Open:         bot.OpenButton,
 		Logger:       logger,
 		Interval:     cfg.WatchInterval,
 		LowDisk:      cfg.LowDisk,

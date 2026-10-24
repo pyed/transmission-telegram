@@ -13,6 +13,7 @@ import (
 	"time"
 
 	tgbot "github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 	"github.com/pyed/transmission"
 	"github.com/pyed/transmission-telegram/v2/internal/state"
 )
@@ -91,6 +92,9 @@ type watcherTest struct {
 	transmission *fakeTransmission
 	now          time.Time
 	sent         []sent
+	// opened holds the callback data of each sent notification's button,
+	// empty for one without.
+	opened []string
 	// fail, when set, is the error the next sends return.
 	fail error
 }
@@ -109,12 +113,22 @@ func newWatcherTest(t *testing.T, torrents ...*transmission.Torrent) *watcherTes
 		Transmission: wt.transmission,
 		State:        store,
 		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Send: func(_ context.Context, chatID int64, text string) error {
+		Send: func(_ context.Context, chatID int64, text string, markup models.ReplyMarkup) error {
 			if wt.fail != nil {
 				return wt.fail
 			}
 			wt.sent = append(wt.sent, sent{chatID, text})
+			var opened string
+			if keyboard, ok := markup.(*models.InlineKeyboardMarkup); ok {
+				opened = keyboard.InlineKeyboard[0][0].CallbackData
+			}
+			wt.opened = append(wt.opened, opened)
 			return nil
+		},
+		Open: func(id int, hash string) models.ReplyMarkup {
+			return &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
+				{Text: "open", CallbackData: fmt.Sprintf("open:%d:%s", id, hash[:4])},
+			}}}
 		},
 		now: func() time.Time { return wt.now },
 	}
@@ -159,6 +173,9 @@ func TestCompletionsAreAnnouncedOnce(t *testing.T) {
 	if want := []sent{{42, "✅ <b>Finished:</b> <code>1</code> Debian &lt;12&gt; (4.0 GB)"}}; !slices.Equal(wt.sent, want) {
 		t.Fatalf("sent %v, want %v", wt.sent, want)
 	}
+	if want := []string{"open:1:" + downloading.HashString[:4]}; !slices.Equal(wt.opened, want) {
+		t.Fatalf("buttons %q, want %q", wt.opened, want)
+	}
 }
 
 // Without a chat to tell, nothing is sent, and the completion is not saved
@@ -193,6 +210,9 @@ func TestManyCompletionsComeTogether(t *testing.T) {
 	texts := wt.texts()
 	if len(texts) != 1 || !strings.HasPrefix(texts[0], "✅ <b>5 torrents finished:</b>\n<code>1</code> t1") {
 		t.Fatalf("sent %q", texts)
+	}
+	if wt.opened[0] != "" {
+		t.Fatalf("a notification of several torrents has a button: %q", wt.opened[0])
 	}
 }
 
@@ -350,6 +370,9 @@ func TestNewErrorsAreAnnouncedOnce(t *testing.T) {
 	if !slices.Equal(wt.sent, want) {
 		t.Fatalf("sent %v\nwant %v", wt.sent, want)
 	}
+	if want := []string{"", "open:1:" + torrent(1, "a", 1).HashString[:4]}; !slices.Equal(wt.opened, want) {
+		t.Fatalf("buttons %q, want %q", wt.opened, want)
+	}
 }
 
 // Once a chat has chosen with /notify, notifications follow the choices,
@@ -392,8 +415,12 @@ func TestFailedNotificationsAreSentAgain(t *testing.T) {
 		t.Fatalf("sent %q, want a's notification and then b's", texts)
 	}
 
+	if !slices.Equal(wt.opened, []string{"open:1:" + torrent(1, "a", 0).HashString[:4], "open:2:" + torrent(2, "b", 0).HashString[:4]}) {
+		t.Fatalf("a notification sent again lost its button: %q", wt.opened)
+	}
+
 	wt.fail = fmt.Errorf("%w, Forbidden: bot was blocked by the user", tgbot.ErrorForbidden)
-	wt.announce(context.Background(), Completed, "refused")
+	wt.announce(context.Background(), Completed, "refused", nil)
 	if len(wt.pending) != 0 {
 		t.Fatal("a refused notification was kept to send again")
 	}
