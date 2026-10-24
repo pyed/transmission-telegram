@@ -47,7 +47,7 @@ func commandTable() []commandSection {
 			{"files", []string{"fi"}, "<id>", "List a torrent's files, to skip them or change their priority", (*Bot).files},
 		}},
 		{"Torrent control", []command{
-			{"add", []string{"ad"}, "<link…>", "Add torrents from links or magnets; or send a .torrent file", (*Bot).add},
+			{"add", []string{"ad"}, "<link…> [d=folder] [l=label] [paused]", "Add torrents from links or magnets, or send .torrent files with the options as a caption", (*Bot).add},
 			{"stop", []string{"sp"}, "<id…|all>", "Pause torrents", (*Bot).stop},
 			{"start", []string{"st"}, "<id…|all>", "Resume torrents", (*Bot).start},
 			{"check", []string{"ck"}, "<id…|all>", "Verify torrents' data", (*Bot).check},

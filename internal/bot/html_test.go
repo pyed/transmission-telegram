@@ -90,7 +90,7 @@ func TestRepliesAreValidHTMLAndShowNamesExactly(t *testing.T) {
 		{"stats"}, {"speed"}, {"count"}, {"trackers"},
 		{"version"}, {"help"}, {"sort"}, {"sort", "rev", "size"}, {"sort", "<bad>"}, {"downloaddir", "/media/<a & b>"},
 		{"downlimit", "100"}, {"uplimit", "x<"}, {"limit"}, {"limit", "down", "5"}, {"limit", "<x>"}, {"whoami"}, {"turtle", "on"}, {"turtle", "schedule"}, {"turtle", "schedule", "<x>"}, {"free", "/media/<a & b>"}, {"reannounce", "all"},
-		{"add", "magnet:?xt=urn:btih:<x>&dn=a"}, {"stop", "1", "<x>"}, {"start", "all"}, {"check", "1"},
+		{"add", "magnet:?xt=urn:btih:<x>&dn=a"}, {"add", "magnet:?xt=urn:btih:x", "d=/<a&b>", "l=<x>", "paused"}, {"add", "<x>=1"}, {"stop", "1", "<x>"}, {"start", "all"}, {"check", "1"},
 		{"del", "1"}, {"deldata", "<x>"}, {"notify"}, {"notify", "errors", "on"}, {"notify", "<x>"}, {"nosuchcommand"},
 	}
 	for _, command := range commands {

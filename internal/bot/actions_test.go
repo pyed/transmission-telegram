@@ -269,6 +269,45 @@ func TestActionsOnSeveralTorrents(t *testing.T) {
 	}
 }
 
+// /add takes a download folder, labels, and paused among its links, and a
+// .torrent file takes them from its caption; labels are set after adding,
+// as Transmission before 4.0 takes them only that way.
+func TestAddOptions(t *testing.T) {
+	ft := newFakeTelegram(t)
+	ft.fileBytes = fakeTorrent
+	fts := newFakeTransmission(t)
+	client, err := transmission.New(fts.URL+"/transmission/rpc", "", "")
+	if err != nil {
+		t.Fatalf("failed to create transmission client: %v", err)
+	}
+	b := newTestBot(t, ft.newBot(t), client)
+	ctx := context.Background()
+
+	b.add(ctx, req("magnet:?xt=urn:btih:abc&dn=x", "D=/media/movies", "l=hd", "label=new", "PAUSED"))
+	b.receiveTorrent(ctx, &request{chatID: 42, message: &models.Message{
+		Caption:  "for later d=/media/shows",
+		Document: &models.Document{FileID: "test-file-id", FileName: "upload.torrent"},
+	}})
+	b.add(ctx, req("magnet:?xt=urn:btih:abc", "x=1"))
+	b.add(ctx, req("magnet:?xt=urn:btih:abc", "l=a,b"))
+
+	adds := fts.addRequests()
+	if len(adds) != 2 || !strings.Contains(adds[0], `"download-dir":"/media/movies","filename":"magnet:?xt=urn:btih:abc`) ||
+		!strings.Contains(adds[0], `dn=x","paused":true`) ||
+		!strings.Contains(adds[1], `"download-dir":"/media/shows","metainfo":`) || strings.Contains(adds[1], "paused") {
+		t.Fatalf("torrent-add requests = %q", adds)
+	}
+	if sets := fts.requestBodies("torrent-set"); len(sets) != 1 || sets[0] != `{"method":"torrent-set","arguments":{"labels":["hd","new"],"ids":[7]}}` {
+		t.Fatalf("torrent-set requests = %q", sets)
+	}
+	texts := ft.sentTexts()
+	if len(texts) != 4 || !strings.HasSuffix(texts[0], " · in <code>/media/movies</code> · labels: hd, new · paused") ||
+		!strings.HasSuffix(texts[1], " · in <code>/media/shows</code>") ||
+		!strings.HasPrefix(texts[2], "<b>add:</b> x=1 is not an option.") || !strings.HasPrefix(texts[3], "<b>add:</b> l=a,b is not an option.") {
+		t.Fatalf("replies = %q", texts)
+	}
+}
+
 // Transmission answers a torrent it already has with torrent-duplicate;
 // that is no new torrent, and the reply says so.
 func TestAddSaysWhenATorrentWasAlreadyThere(t *testing.T) {

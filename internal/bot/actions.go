@@ -18,15 +18,79 @@ import (
 	"github.com/pyed/transmission-telegram/v2/internal/redact"
 )
 
-// add adds torrents by URL or magnet link.
+const addOptionsUsage = "d=/folder sets the download folder, l=label adds a label (any number of them), " +
+	"and paused adds without starting; a folder or label may not contain spaces, and a label may not contain a comma."
+
+// addOptions are what /add's arguments, and a .torrent file's caption, may
+// set besides the links.
+type addOptions struct {
+	dir    string
+	labels []string
+	paused bool
+}
+
+// parseAddOptions takes the options out of /add's arguments, or a caption's
+// words: d= (or dir=) for the download folder, l= (or label=) for a label,
+// and paused. It returns the other arguments, and a description of the
+// first option it cannot take.
+func parseAddOptions(args []string) (rest []string, options addOptions, problem string) {
+	for _, arg := range args {
+		key, value, isOption := strings.Cut(arg, "=")
+		lowered := strings.ToLower(key)
+		switch {
+		case !isOption && strings.EqualFold(arg, "paused"):
+			options.paused = true
+		case !isOption:
+			rest = append(rest, arg)
+		case strings.HasPrefix(strings.ToLower(arg), "magnet:") || strings.Contains(key, "://"):
+			// A link's own query has "=" in it.
+			rest = append(rest, arg)
+		case (lowered == "d" || lowered == "dir") && value != "":
+			options.dir = value
+		case (lowered == "l" || lowered == "label") && value != "" && !strings.Contains(value, ","):
+			options.labels = append(options.labels, value)
+		default:
+			if problem == "" {
+				problem = esc(arg) + " is not an option. " + addOptionsUsage
+			}
+		}
+	}
+	return rest, options, problem
+}
+
+// describe says what the options did, for the reply to an add.
+func (o addOptions) describe() string {
+	var parts []string
+	if o.dir != "" {
+		parts = append(parts, "in <code>"+esc(o.dir)+"</code>")
+	}
+	if len(o.labels) > 0 {
+		parts = append(parts, "labels: "+esc(strings.Join(o.labels, ", ")))
+	}
+	if o.paused {
+		parts = append(parts, "paused")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " · " + strings.Join(parts, " · ")
+}
+
+// add adds torrents by URL or magnet link, with the options given among
+// them.
 func (b *Bot) add(ctx context.Context, r *request) {
-	if len(r.args) == 0 {
+	links, options, problem := parseAddOptions(r.args)
+	if problem != "" {
+		b.reply(ctx, r, "<b>add:</b> "+problem)
+		return
+	}
+	if len(links) == 0 {
 		b.reply(ctx, r, "<b>add:</b> needs at least one URL")
 		return
 	}
 
-	for _, link := range r.args {
-		torrent, duplicate, err := b.addTorrent(ctx, transmission.AddTorrentOptions{Filename: &link})
+	for _, link := range links {
+		torrent, duplicate, err := b.addTorrent(ctx, transmission.AddTorrentOptions{Filename: &link}, options)
 		if err != nil {
 			b.replyError(ctx, r, "add", err)
 			continue
@@ -40,7 +104,7 @@ func (b *Bot) add(ctx context.Context, r *request) {
 		if info, err := b.Client.GetTorrent(torrent.ID, ctx); err == nil && info.SizeWhenDone > 0 {
 			added += " (" + size(info.SizeWhenDone) + ")"
 		}
-		b.reply(ctx, r, added)
+		b.reply(ctx, r, added+options.describe())
 	}
 }
 
@@ -51,15 +115,29 @@ type addResult struct {
 	Duplicate *transmission.TorrentAdded `json:"torrent-duplicate"`
 }
 
-// addTorrent adds a torrent, and reports whether Transmission already had
-// it; pyed/transmission's AddTorrent answers both the same way.
-func (b *Bot) addTorrent(ctx context.Context, options transmission.AddTorrentOptions) (*transmission.TorrentAdded, bool, error) {
+// addTorrent adds a torrent with options, and reports whether Transmission
+// already had it, which it then leaves as it was; pyed/transmission's
+// AddTorrent answers both the same way. Labels are set by a request of
+// their own: torrent-add takes them only from Transmission 4.0, torrent-set
+// from 3.00.
+func (b *Bot) addTorrent(ctx context.Context, add transmission.AddTorrentOptions, options addOptions) (*transmission.TorrentAdded, bool, error) {
+	if options.dir != "" {
+		add.DownloadDir = &options.dir
+	}
+	if options.paused {
+		add.Paused = &options.paused
+	}
 	var result addResult
-	if err := b.Client.Execute(ctx, "torrent-add", options, &result); err != nil {
+	if err := b.Client.Execute(ctx, "torrent-add", add, &result); err != nil {
 		return nil, false, err
 	}
 	switch {
 	case result.Added != nil:
+		if len(options.labels) > 0 {
+			if err := b.Client.SetTorrent(ctx, []int{result.Added.ID}, transmission.TorrentSetOptions{Labels: options.labels}); err != nil {
+				return nil, false, fmt.Errorf("added %q, but not its labels: %w", result.Added.Name, err)
+			}
+		}
 		return result.Added, false, nil
 	case result.Duplicate != nil:
 		return result.Duplicate, true, nil
@@ -96,8 +174,10 @@ func (b *Bot) receiveTorrent(ctx context.Context, r *request) {
 		return
 	}
 
+	// A caption's options apply; other words in it are a note, and ignored.
+	_, options, _ := parseAddOptions(strings.Fields(r.message.Caption))
 	metainfo := base64.StdEncoding.EncodeToString(data)
-	torrent, duplicate, err := b.addTorrent(ctx, transmission.AddTorrentOptions{MetaInfo: &metainfo})
+	torrent, duplicate, err := b.addTorrent(ctx, transmission.AddTorrentOptions{MetaInfo: &metainfo}, options)
 	if err != nil {
 		b.replyError(ctx, r, "receiver", err)
 		return
@@ -107,7 +187,7 @@ func (b *Bot) receiveTorrent(ctx context.Context, r *request) {
 		return
 	}
 
-	b.reply(ctx, r, fmt.Sprintf("<b>Added:</b> <code>%d</code> %s", torrent.ID, esc(torrent.Name)))
+	b.reply(ctx, r, fmt.Sprintf("<b>Added:</b> <code>%d</code> %s", torrent.ID, esc(torrent.Name))+options.describe())
 }
 
 // maxTorrentDownloadSize is the largest .torrent file we will download from
