@@ -145,6 +145,47 @@ jobs:
         fi
         go build -trimpath -v -o "${OUTPUT}" .
 
+  transmission:
+    name: Against Transmission ${{ matrix.transmission }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The last 4.0 release, and the newest, which deprecates the RPC
+          # protocol the bot speaks but still serves it.
+          - transmission: '4.0.6'
+            image: docker.io/linuxserver/transmission:version-4.0.6-r6@sha256:452310cb020c036d293e879698097acb6cc653db2676610bf8e3b58a3f4d2af5
+          - transmission: '4.1.3'
+            image: docker.io/linuxserver/transmission:version-4.1.3-r0@sha256:55aaeedf9fc354d34136387e15ee0ba4679096f20398dd2875867e5cd5cf8be5
+    services:
+      transmission:
+        image: ${{ matrix.image }}
+        env:
+          # A throwaway password, so that the bot's RPC authentication is
+          # exercised too.
+          USER: ci
+          PASS: ci-only-password
+        ports:
+          - 9091:9091
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Set up Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: '1.27.3'
+
+    - name: Drive the bot against Transmission
+      env:
+        TT_TEST_TRANSMISSION_URL: http://localhost:9091/transmission/rpc
+        TT_TEST_TRANSMISSION_AUTH: ci:ci-only-password
+      run: go test -count=1 -v -run TestAgainstTransmission ./internal/bot/
+
   container:
     name: Container Build
     runs-on: ubuntu-latest
