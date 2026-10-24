@@ -91,11 +91,11 @@ func TestAgainstTransmission(t *testing.T) {
 		t.Fatalf("/version: %q", reply)
 	}
 	magnet := "magnet:?xt=urn:btih:" + integrationHash + "&dn=tt-integration"
-	if reply := say("/add " + magnet + " d=/downloads/tt-integration l=testing paused"); !strings.Contains(reply, "<b>Added:</b>") {
+	if reply := say("/add " + magnet + " d=/tmp/tt-integration l=testing paused"); !strings.Contains(reply, "<b>Added:</b>") {
 		t.Fatalf("/add: %q", reply)
 	}
 	added := torrent()
-	if added == nil || added.Status != transmission.StatusStopped || added.DownloadDir != "/downloads/tt-integration" ||
+	if added == nil || added.Status != transmission.StatusStopped || added.DownloadDir != "/tmp/tt-integration" ||
 		!slices.Equal(added.Labels, []string{"testing"}) {
 		t.Fatalf("added %+v", added)
 	}
@@ -106,7 +106,7 @@ func TestAgainstTransmission(t *testing.T) {
 	if reply := say("/info " + id); !strings.Contains(reply, "tt-integration") {
 		t.Fatalf("/info: %q", reply)
 	}
-	for _, command := range []string{"/list", "/paused", "/latest", "/search integration", "/files " + id, "/stats", "/count", "/trackers", "/free", "/queue"} {
+	for _, command := range []string{"/list", "/paused", "/latest", "/search integration", "/files " + id, "/stats", "/count", "/trackers", "/free /tmp", "/queue"} {
 		say(command)
 	}
 
@@ -117,8 +117,8 @@ func TestAgainstTransmission(t *testing.T) {
 	if reply := say("/labels"); !strings.Contains(reply, "movies") {
 		t.Fatalf("/labels: %q", reply)
 	}
-	say("/move " + id + " /downloads/tt-moved")
-	eventually("/move", func(tr *transmission.Torrent) bool { return tr.DownloadDir == "/downloads/tt-moved" })
+	say("/move " + id + " /tmp/tt-moved")
+	eventually("/move", func(tr *transmission.Torrent) bool { return tr.DownloadDir == "/tmp/tt-moved" })
 	say("/start " + id)
 	eventually("/start", func(tr *transmission.Torrent) bool { return tr.Status != transmission.StatusStopped })
 	say("/stop " + id)
