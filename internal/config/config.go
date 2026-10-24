@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/dustin/go-humanize"
 )
@@ -56,6 +57,15 @@ func (masters MasterSlice) Contains(username string, userID int64) bool {
 		}
 	}
 	return false
+}
+
+// SetupMaster is the master to start the bot with before knowing one's
+// user ID: while it is the only one, the bot tells people their ID.
+const SetupMaster = "1"
+
+// Setup reports whether the only master is the placeholder SetupMaster.
+func (masters MasterSlice) Setup() bool {
+	return len(masters) == 1 && masters[0] == SetupMaster
 }
 
 // Usernames returns the masters given by username rather than numeric user
@@ -130,7 +140,7 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	// flag defaults: flag defaults are printed by -h and after every usage
 	// error, which would put the token and passwords in logs.
 	fs.StringVar(&cfg.BotToken, "token", "", "Telegram bot token (env: TT_BOT_TOKEN or legacy TT_BOTT)")
-	fs.Var(&cfg.Masters, "master", "Telegram username or numeric user ID allowed to use the bot; repeatable")
+	fs.Var(&cfg.Masters, "master", "Telegram user ID or username allowed to use the bot; repeatable (env: TT_MASTERS, separated by commas)")
 	fs.StringVar(&cfg.RPCURL, "url", defaultRPCURL, "Transmission RPC URL (env: TR_URL)")
 	fs.StringVar(&cfg.Username, "username", "", "Transmission username (env: TR_AUTH user:password)")
 	fs.StringVar(&cfg.Password, "password", "", "Transmission password (env: TR_AUTH user:password)")
@@ -177,8 +187,15 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	if cfg.BotToken == "" {
 		return nil, errors.New("telegram bot token is required (-token or TT_BOT_TOKEN)")
 	}
+	if !given["master"] {
+		for _, master := range strings.FieldsFunc(getenv("TT_MASTERS"), func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
+			if err := cfg.Masters.Set(master); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if len(cfg.Masters) < 1 {
-		return nil, errors.New("at least one authorized user is required (-master)")
+		return nil, errors.New("at least one authorized user is required (-master or TT_MASTERS); start with -master=1 to have the bot tell you your user ID")
 	}
 	if cfg.WatchInterval < time.Second {
 		return nil, errors.New("watch-interval must be at least 1s")

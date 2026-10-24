@@ -50,8 +50,12 @@ func main() {
 	)
 	if usernames := cfg.Masters.Usernames(); len(usernames) > 0 {
 		logger.Warn("Some masters are given by username. A username its owner gives up can be claimed by someone else, "+
-			"who would then control this bot; use numeric user IDs instead (the log shows each sender's user_id)",
+			"who would then control this bot; use numeric user IDs instead (/whoami shows yours)",
 			"usernames", usernames)
+	}
+	if cfg.Masters.Setup() {
+		logger.Warn("The only master is the placeholder 1, so the bot tells anyone who writes to it their user ID; " +
+			"restart it with yours as -master or TT_MASTERS")
 	}
 
 	// Initialize Transmission client. The client works without a first

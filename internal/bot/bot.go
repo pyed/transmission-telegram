@@ -54,6 +54,10 @@ type Bot struct {
 	// screens remembers the list messages whose buttons turn pages.
 	screensMu sync.Mutex
 	screens   screenStore
+
+	// toldIDs are the users told their ID in setup mode.
+	setupMu sync.Mutex
+	toldIDs map[int64]bool
 }
 
 // chatQueueSize is how many updates of one chat may wait for its handler.
@@ -372,6 +376,11 @@ func (b *Bot) handleUpdate(ctx context.Context, _ *tgbot.Bot, update *models.Upd
 			"user_id", userID,
 			"chat_id", update.Message.Chat.ID,
 		)
+		if b.Config.Masters.Setup() && userID > 0 && b.firstSetupReply(userID) {
+			b.reply(ctx, &request{chatID: update.Message.Chat.ID}, fmt.Sprintf(
+				"Your Telegram user ID is <code>%d</code>. To let this account use the bot, start it with "+
+					"<code>-master=%d</code> or <code>TT_MASTERS=%d</code> instead of the placeholder 1.", userID, userID, userID))
+		}
 		return
 	}
 
@@ -438,6 +447,21 @@ func (b *Bot) recoverMiddleware(next tgbot.HandlerFunc) tgbot.HandlerFunc {
 		}()
 		next(ctx, api, update)
 	}
+}
+
+// firstSetupReply reports whether userID has not yet been told their ID in
+// setup mode, and notes that they now have: once is enough.
+func (b *Bot) firstSetupReply(userID int64) bool {
+	b.setupMu.Lock()
+	defer b.setupMu.Unlock()
+	if b.toldIDs == nil {
+		b.toldIDs = make(map[int64]bool)
+	}
+	if b.toldIDs[userID] {
+		return false
+	}
+	b.toldIDs[userID] = true
+	return true
 }
 
 // rememberChat records the chat a master used last, where notifications go

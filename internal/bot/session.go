@@ -18,6 +18,16 @@ func (b *Bot) version(ctx context.Context, r *request) {
 	b.reply(ctx, r, fmt.Sprintf("Transmission <b>%s</b>\ntransmission-telegram <b>%s</b>", esc(session.Version), esc(config.Version)))
 }
 
+// whoami shows the sender's Telegram user ID, which -master takes, and the
+// chat's.
+func (b *Bot) whoami(ctx context.Context, r *request) {
+	var userID int64
+	if r.message != nil && r.message.From != nil {
+		userID = r.message.From.ID
+	}
+	b.reply(ctx, r, fmt.Sprintf("Your Telegram user ID: <code>%d</code>\nThis chat's ID: <code>%d</code>", userID, r.chatID))
+}
+
 // stats shows Transmission's session and cumulative statistics.
 func (b *Bot) stats(ctx context.Context, r *request) {
 	stats, err := b.Client.GetStats(ctx)

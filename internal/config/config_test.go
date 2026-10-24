@@ -296,6 +296,30 @@ func TestParseFlags_WatchSettings(t *testing.T) {
 	}
 }
 
+// Masters come from -master, or else TT_MASTERS, separated by commas or
+// spaces; the placeholder 1 is the setup mode.
+func TestParseFlags_MastersFromEnvironment(t *testing.T) {
+	env := func(key string) string {
+		if key == "TT_MASTERS" {
+			return "123, @Alice 456"
+		}
+		return ""
+	}
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err := ParseFlags(fs, []string{"-token=t"}, env)
+	if err != nil || !reflect.DeepEqual(cfg.Masters, MasterSlice{"123", "alice", "456"}) {
+		t.Fatalf("masters = %v, %v", cfg.Masters, err)
+	}
+	fs = flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err = ParseFlags(fs, []string{"-token=t", "-master=789"}, env)
+	if err != nil || !reflect.DeepEqual(cfg.Masters, MasterSlice{"789"}) {
+		t.Fatalf("-master did not replace TT_MASTERS: %v, %v", cfg.Masters, err)
+	}
+	if cfg.Masters.Setup() || !(MasterSlice{SetupMaster}).Setup() || (MasterSlice{SetupMaster, "2"}).Setup() {
+		t.Fatal("Setup misreads the masters")
+	}
+}
+
 // The state file comes from -state, or else TT_STATE.
 func TestParseFlags_StateFile(t *testing.T) {
 	env := func(key string) string {

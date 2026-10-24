@@ -67,6 +67,7 @@ func commandTable() []commandSection {
 			{"uplimit", []string{"ul"}, "[KB/s|off]", "Show or set the global upload limit; 0 or off removes it", (*Bot).uplimit},
 			{"downloaddir", []string{"dd"}, "<path>", "Set the default download folder", (*Bot).downloaddir},
 			{"notify", nil, "[on|off|<kind> on|off]", "Choose the notifications this chat gets", (*Bot).notify},
+			{"whoami", nil, "", "Show your Telegram user ID and this chat's ID", (*Bot).whoami},
 			{"version", []string{"ver"}, "", "Show Transmission's and the bot's versions", (*Bot).version},
 			{"help", nil, "", "List the commands", (*Bot).help},
 		}},
