@@ -4,9 +4,12 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/pyed/transmission"
 )
 
 // labelsRPCVersion is the RPC version of Transmission 3.00, the first with
@@ -43,27 +46,12 @@ func (b *Bot) labels(ctx context.Context, r *request) {
 		b.replyError(ctx, r, "labels", err)
 		return
 	}
-	counts := make(map[string]int)
-	var unlabelled int
-	for _, t := range torrents {
-		if len(t.Labels) == 0 {
-			unlabelled++
-		}
-		for _, label := range t.Labels {
-			counts[label]++
-		}
-	}
+	counts, unlabelled := countLabels(torrents)
 	if len(counts) == 0 {
 		b.reply(ctx, r, "No torrent has a label. Give some with <code>/setlabel ID LABEL</code>.")
 		return
 	}
-	labels := make([]string, 0, len(counts))
-	for label := range counts {
-		labels = append(labels, label)
-	}
-	slices.SortFunc(labels, func(a, b string) int {
-		return cmp.Or(cmp.Compare(counts[b], counts[a]), cmp.Compare(strings.ToLower(a), strings.ToLower(b)), cmp.Compare(a, b))
-	})
+	labels := byCount(counts)
 	lines := make([]string, 0, len(labels)+2)
 	for _, label := range labels {
 		lines = append(lines, fmt.Sprintf("<b>%d</b> %s", counts[label], esc(label)))
@@ -73,6 +61,28 @@ func (b *Bot) labels(ctx context.Context, r *request) {
 	}
 	lines = append(lines, "", "List a label's torrents with <code>/labels NAME</code>, or those without one with <code>/labels -</code>.")
 	b.reply(ctx, r, strings.Join(lines, "\n"))
+}
+
+// countLabels counts the torrents with each label, and those without one.
+func countLabels(torrents transmission.Torrents) (counts map[string]int, unlabelled int) {
+	counts = make(map[string]int)
+	for _, t := range torrents {
+		if len(t.Labels) == 0 {
+			unlabelled++
+		}
+		for _, label := range t.Labels {
+			counts[label]++
+		}
+	}
+	return counts, unlabelled
+}
+
+// byCount orders labels by their counts, the largest first, and then by
+// name.
+func byCount(counts map[string]int) []string {
+	return slices.SortedFunc(maps.Keys(counts), func(a, b string) int {
+		return cmp.Or(cmp.Compare(counts[b], counts[a]), cmp.Compare(strings.ToLower(a), strings.ToLower(b)), cmp.Compare(a, b))
+	})
 }
 
 // setlabel sets torrents' labels: /setlabel <id…> <label…>, or "-" for no

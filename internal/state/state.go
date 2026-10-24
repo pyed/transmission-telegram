@@ -1,6 +1,7 @@
 // Package state keeps what the bot remembers across restarts in a JSON
-// file: where notifications go, each chat's sort order and status message,
-// which torrents were not done yet, and the command menu it registered.
+// file: where notifications go, each chat's sort order, status message and
+// digest, which torrents were not done yet, and the command menu it
+// registered.
 package state
 
 import (
@@ -40,6 +41,26 @@ type Data struct {
 	Menu []string `json:"menu,omitempty"`
 	// Status holds the message ID of each chat's status message (/status).
 	Status map[int64]int `json:"status,omitempty"`
+	// Digest holds each chat's digest (/digest).
+	Digest map[int64]Digest `json:"digest,omitempty"`
+}
+
+// Digest is a chat's summary every day, week, or month.
+type Digest struct {
+	// Time is when it comes, as HH:MM in the bot's time zone.
+	Time string `json:"time"`
+	// Every is "weekly" or "monthly"; empty is daily.
+	Every string `json:"every,omitempty"`
+	// LastDue is the date the last digest was due, as 2006-01-02. It was
+	// sent then, or as soon as the bot could, unless Telegram refused it.
+	LastDue string `json:"lastDue"`
+	// Since is when the next digest's period began, in Unix seconds: when
+	// the last one was sent, or the digest was set.
+	Since int64 `json:"since"`
+	// Uploaded and Downloaded are Transmission's cumulative totals at
+	// Since, which the next digest counts from.
+	Uploaded   uint64 `json:"uploaded"`
+	Downloaded uint64 `json:"downloaded"`
 }
 
 // Store holds Data and saves it after every update. A Store without a path

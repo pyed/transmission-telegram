@@ -2,7 +2,6 @@ package bot
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -170,12 +169,10 @@ func (b *Bot) updateStatus(ctx context.Context, chatID int64, text string) error
 }
 
 // statusGone reports whether err says a status message can no longer be
-// edited: it was deleted, its group became a supergroup, or the bot can no
-// longer post in its chat.
+// edited: it was deleted, or the bot can no longer post in its chat.
 func statusGone(err error) bool {
 	text := strings.ToLower(err.Error())
-	return errors.Is(err, tgbot.ErrorForbidden) || strings.Contains(text, "chat not found") ||
-		strings.Contains(text, "upgraded to a supergroup") || strings.Contains(text, "message to edit not found") ||
+	return chatGone(err) || strings.Contains(text, "message to edit not found") ||
 		strings.Contains(text, "message_id_invalid") || strings.Contains(text, "message can't be edited")
 }
 
@@ -247,8 +244,8 @@ func (b *Bot) renderStatus(ctx context.Context) string {
 		counts += fmt.Sprintf(" · %d with errors", errored)
 	}
 	lines = append(lines, counts)
-	if free, _, err := b.Client.FreeSpace(ctx, session.DownloadDir); err == nil && free >= 0 {
-		lines = append(lines, "Free space: "+size(uint64(free)))
+	if free, ok := b.freeSpace(ctx, session.DownloadDir); ok {
+		lines = append(lines, "Free space: "+size(free))
 	}
 	return strings.Join(append(lines, updated), "\n")
 }

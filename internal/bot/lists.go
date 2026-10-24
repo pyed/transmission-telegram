@@ -97,13 +97,7 @@ func (b *Bot) listing(ctx context.Context, chatID int64, command string, args []
 		return listing{}, err
 	}
 	keep := func(accept func(*transmission.Torrent) bool) transmission.Torrents {
-		var kept transmission.Torrents
-		for _, t := range torrents {
-			if accept(t) {
-				kept = append(kept, t)
-			}
-		}
-		return kept
+		return keepTorrents(torrents, accept)
 	}
 	hasStatus := func(statuses ...int) transmission.Torrents {
 		return keep(func(t *transmission.Torrent) bool { return slices.Contains(statuses, t.Status) })

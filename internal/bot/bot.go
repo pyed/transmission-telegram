@@ -220,6 +220,7 @@ func clearWebhook(ctx context.Context, api *tgbot.Bot) error {
 // Start starts the bot polling loop (blocks until context is cancelled).
 func (b *Bot) Start(ctx context.Context) {
 	b.launch(ctx, "status messages", b.watchStatus)
+	b.launch(ctx, "digests", b.watchDigest)
 	b.API.Start(ctx)
 	b.wg.Wait()
 }

@@ -54,7 +54,7 @@ go install github.com/pyed/transmission-telegram/v2@latest
 | `-logfile` | — | Send bot logs to a file only its owner can read, moved aside to `FILE.1` at 10 MiB (default: stdout) |
 | `-transmission-logfile` | — | Deprecated and ignored: Transmission 4 no longer logs completions at its default level, so notifications always come from RPC |
 | `-no-live` | — | Disable real-time editing and live update loops |
-| `-state` | `TT_STATE` | File where the bot keeps what it remembers: where notifications go, each chat's sort order and status message, which torrents were not done (default: `transmission-telegram/state.json` in the user's config directory; `/config/state.json` in the Docker image) |
+| `-state` | `TT_STATE` | File where the bot keeps what it remembers: where notifications go, each chat's sort order, status message and digest, which torrents were not done (default: `transmission-telegram/state.json` in the user's config directory; `/config/state.json` in the Docker image) |
 | `-watch-interval` | — | How often to check Transmission for notifications (default: `10s`) |
 | `-low-disk` | — | Free space below which chats that chose `disk` notifications are warned (default: `5GB`; `0` turns it off) |
 | `-version` | — | Print the version and exit |
@@ -116,6 +116,7 @@ transmission-telegram \
 | `/port` | — | Check whether peers can reach Transmission's port |
 | `/free [path]` | `/space`, `/disk` | Show free and total disk space on the download drive |
 | `/reannounce <id...\|all>` | `/ra` | Force tracker re-announce |
+| `/digest [HH:MM [daily\|weekly\|monthly] \| now \| off]` | — | Get a summary every day, week (on Mondays), or month (on the 1st): what finished and was added, what Transmission transferred, torrents and their errors, and free space; `now` shows one at once. Times are in the bot's time zone (`TZ`) |
 | `/status [off]` | — | Pin a message that shows speeds and limits, this session's totals, torrents at work, and free space, updated every minute and by its 🔄 button; `off` stops it |
 | `/speed` | `/ss` | Display current download and upload speeds |
 | `/stats` | `/sa` | Show Transmission session and cumulative statistics |
@@ -142,12 +143,13 @@ docker run -d --name transmission-telegram \
   -e TT_BOT_TOKEN="<YOUR_BOT_TOKEN>" \
   -e TR_URL="http://host.docker.internal:9091/transmission/rpc" \
   -e TR_AUTH="<username>:<password>" \
+  -e TZ="Etc/UTC" \
   -v transmission-telegram:/config \
   ghcr.io/pyed/transmission-telegram:latest \
   -master="<YOUR_NUMERIC_TELEGRAM_ID>"
 ```
 
-The example connects to Transmission on the Docker host. When both applications run in Compose, use the Transmission service name instead. The `/config` volume keeps the bot's state file, such as where notifications go, when the container is replaced.
+The example connects to Transmission on the Docker host. When both applications run in Compose, use the Transmission service name instead. The `/config` volume keeps the bot's state file, such as where notifications go, when the container is replaced. Set `TZ` to your time zone, such as `Europe/Berlin`, for `/digest` and `/status` times.
 
 ### Docker Compose
 
@@ -191,6 +193,7 @@ services:
       TT_BOT_TOKEN: ${TT_BOT_TOKEN}
       TR_URL: http://transmission:9091/transmission/rpc
       TR_AUTH: transmission:${TRANSMISSION_PASSWORD}
+      TZ: Etc/UTC
     volumes:
       - /path/to/bot-config:/config
     command: ["-master=${TELEGRAM_MASTER_ID}"]

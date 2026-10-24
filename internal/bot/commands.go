@@ -61,6 +61,7 @@ func commandTable() []commandSection {
 		}},
 		{"Session and settings", []command{
 			{"status", nil, "[off]", "Pin a status message that stays up to date", (*Bot).status},
+			{"digest", nil, "[HH:MM [weekly|monthly]|now|off]", "Get a summary every day, week, or month", (*Bot).digest},
 			{"speed", []string{"ss"}, "", "Show the current speeds, updating live", (*Bot).speed},
 			{"stats", []string{"sa"}, "", "Show session and total statistics", (*Bot).stats},
 			{"count", []string{"co"}, "", "Count torrents in each state", (*Bot).count},

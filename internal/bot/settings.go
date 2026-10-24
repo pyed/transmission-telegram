@@ -243,6 +243,16 @@ func describeLimit(limit int64, enabled bool) string {
 	return fmt.Sprintf("%d KB/s", limit)
 }
 
+// freeSpace is the free space at path, or false when Transmission cannot
+// tell.
+func (b *Bot) freeSpace(ctx context.Context, path string) (uint64, bool) {
+	free, _, err := b.Client.FreeSpace(ctx, path)
+	if err != nil || free < 0 {
+		return 0, false
+	}
+	return uint64(free), true
+}
+
 // free shows the free disk space where Transmission downloads, or at a path.
 func (b *Bot) free(ctx context.Context, r *request) {
 	path := strings.Join(r.args, " ")
