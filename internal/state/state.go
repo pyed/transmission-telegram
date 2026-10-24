@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"syscall"
 )
 
 // version is the format of the state file. Bump it only for incompatible
@@ -91,7 +92,9 @@ func Load(path string) (*Store, error) {
 		return s, nil
 	}
 	content, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
+	// A path inside a file, which Unix reports as ENOTDIR rather than
+	// absent, holds no state either; saving there fails, and says so.
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
 		return s, nil
 	}
 	if err != nil {
