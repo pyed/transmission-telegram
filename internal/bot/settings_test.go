@@ -249,6 +249,40 @@ func TestStatsShowRatios(t *testing.T) {
 	}
 }
 
+// /limit shows both limits and turtle mode, and sets either or both; 0 or
+// off removes a limit without forgetting its value.
+func TestLimit(t *testing.T) {
+	ft := newFakeTelegram(t)
+	fts := newFakeTransmission(t)
+	fts.session = `{"version":"test","speed-limit-down":300,"speed-limit-down-enabled":true,` +
+		`"speed-limit-up":50,"speed-limit-up-enabled":false,"alt-speed-enabled":true,"alt-speed-down":40,"alt-speed-up":10}`
+	client, err := transmission.New(fts.URL+"/transmission/rpc", "", "")
+	if err != nil {
+		t.Fatalf("failed to create transmission client: %v", err)
+	}
+	b := newTestBot(t, ft.newBot(t), client)
+	ctx := context.Background()
+
+	b.limit(ctx, req())
+	b.limit(ctx, req("UP", "250", "down", "off"))
+	b.limit(ctx, req("off"))
+	b.limit(ctx, req("sideways", "5"))
+	b.limit(ctx, req("down"))
+
+	want := []string{
+		`{"method":"session-set","arguments":{"speed-limit-down-enabled":false,"speed-limit-up":250,"speed-limit-up-enabled":true}}`,
+		`{"method":"session-set","arguments":{"speed-limit-down-enabled":false,"speed-limit-up-enabled":false}}`,
+	}
+	if got := fts.requestBodies("session-set"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("session-set requests:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	texts := ft.sentTexts()
+	if len(texts) != 5 || texts[0] != "↓ <b>Download limit:</b> 300 KB/s\n↑ <b>Upload limit:</b> off\n🐢 <b>Turtle mode:</b> on (↓ 40 KB/s ↑ 10 KB/s)" ||
+		texts[3] != limitUsage || texts[4] != limitUsage {
+		t.Fatalf("replies = %q", texts)
+	}
+}
+
 func TestTurtleRejectsInvalidArgument(t *testing.T) {
 	ft := newFakeTelegram(t)
 	fts := newFakeTransmission(t)

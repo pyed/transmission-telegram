@@ -63,6 +63,7 @@ func commandTable() []commandSection {
 			{"sort", []string{"so"}, "[rev] <method>", "Choose the order of lists", (*Bot).sort},
 			{"turtle", []string{"alt", "tu"}, "[on|off]", "Switch the alternative speed limits", (*Bot).turtle},
 			{"free", []string{"space", "disk"}, "[path]", "Show free disk space", (*Bot).free},
+			{"limit", nil, "[down N] [up N] | off", "Show or set the global speed limits, in KB/s", (*Bot).limit},
 			{"downlimit", []string{"dl"}, "[KB/s|off]", "Show or set the global download limit; 0 or off removes it", (*Bot).downlimit},
 			{"uplimit", []string{"ul"}, "[KB/s|off]", "Show or set the global upload limit; 0 or off removes it", (*Bot).uplimit},
 			{"downloaddir", []string{"dd"}, "<path>", "Set the default download folder", (*Bot).downloaddir},

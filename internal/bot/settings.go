@@ -160,6 +160,82 @@ func (b *Bot) speedLimit(ctx context.Context, r *request, name, label string,
 	b.reply(ctx, r, "<b>"+label+":</b> "+describeLimit(limit, enabled))
 }
 
+const limitUsage = "<b>limit:</b> give <code>limit down N up N</code>, in KB/s, or either half alone; " +
+	"0 or off removes a limit, and <code>limit off</code> removes both."
+
+// limit shows the global speed limits and turtle mode, or sets the limits:
+// limit down N up N, in KB/s, or either half alone, 0 or off removing one;
+// limit off removes both.
+func (b *Bot) limit(ctx context.Context, r *request) {
+	args := make([]string, len(r.args))
+	for i, arg := range r.args {
+		args[i] = strings.ToLower(arg)
+	}
+	if len(args) > 0 {
+		options, ok := limitOptions(args)
+		if !ok {
+			b.reply(ctx, r, limitUsage)
+			return
+		}
+		if err := b.Client.SetSession(ctx, options); err != nil {
+			b.replyError(ctx, r, "limit", err)
+			return
+		}
+	}
+	session, err := b.Client.GetSession(ctx)
+	if err != nil {
+		b.replyError(ctx, r, "limit", err)
+		return
+	}
+	turtle := "off"
+	if session.AltSpeedEnabled {
+		turtle = "on"
+	}
+	b.reply(ctx, r, fmt.Sprintf("↓ <b>Download limit:</b> %s\n↑ <b>Upload limit:</b> %s\n🐢 <b>Turtle mode:</b> %s (↓ %d KB/s ↑ %d KB/s)",
+		describeLimit(session.SpeedLimitDown, session.SpeedLimitDownEnabled),
+		describeLimit(session.SpeedLimitUp, session.SpeedLimitUpEnabled),
+		turtle, session.AltSpeedDown, session.AltSpeedUp))
+}
+
+// limitOptions reads /limit's arguments into the session settings they
+// change; a limit turned off keeps its value, for when it is turned on
+// elsewhere.
+func limitOptions(args []string) (transmission.SessionSetOptions, bool) {
+	var options transmission.SessionSetOptions
+	if len(args) == 1 && args[0] == "off" {
+		off := false
+		options.SpeedLimitDownEnabled, options.SpeedLimitUpEnabled = &off, &off
+		return options, true
+	}
+	if len(args)%2 != 0 {
+		return options, false
+	}
+	for i := 0; i < len(args); i += 2 {
+		var limit int64
+		if args[i+1] != "off" {
+			parsed, err := strconv.ParseUint(args[i+1], 10, 31)
+			if err != nil {
+				return options, false
+			}
+			limit = int64(parsed)
+		}
+		enabled := limit > 0
+		value := &limit
+		if !enabled {
+			value = nil
+		}
+		switch args[i] {
+		case "down", "download":
+			options.SpeedLimitDown, options.SpeedLimitDownEnabled = value, &enabled
+		case "up", "upload":
+			options.SpeedLimitUp, options.SpeedLimitUpEnabled = value, &enabled
+		default:
+			return options, false
+		}
+	}
+	return options, true
+}
+
 func describeLimit(limit int64, enabled bool) string {
 	if !enabled {
 		return "off"

@@ -89,7 +89,7 @@ func TestRepliesAreValidHTMLAndShowNamesExactly(t *testing.T) {
 		{"errors"}, {"active"}, {"info", "1"}, {"info", "<x>"}, {"files", "1"}, {"files", "<x>"},
 		{"stats"}, {"speed"}, {"count"}, {"trackers"},
 		{"version"}, {"help"}, {"sort"}, {"sort", "rev", "size"}, {"sort", "<bad>"}, {"downloaddir", "/media/<a & b>"},
-		{"downlimit", "100"}, {"uplimit", "x<"}, {"turtle", "on"}, {"free", "/media/<a & b>"}, {"reannounce", "all"},
+		{"downlimit", "100"}, {"uplimit", "x<"}, {"limit"}, {"limit", "down", "5"}, {"limit", "<x>"}, {"whoami"}, {"turtle", "on"}, {"free", "/media/<a & b>"}, {"reannounce", "all"},
 		{"add", "magnet:?xt=urn:btih:<x>&dn=a"}, {"stop", "1", "<x>"}, {"start", "all"}, {"check", "1"},
 		{"del", "1"}, {"deldata", "<x>"}, {"notify"}, {"notify", "errors", "on"}, {"notify", "<x>"}, {"nosuchcommand"},
 	}
