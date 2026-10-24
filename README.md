@@ -197,7 +197,7 @@ The image runs as user `1000:1000`, so a directory mounted at `/config` must be 
 - Treat the Telegram bot token and Transmission credentials as secrets. Keep them in protected environment or secret-management facilities and never commit `.env` files.
 - Prefer a numeric Telegram user ID in `-master`, especially for bots that can delete torrent data.
 - Keep Transmission RPC on a trusted network or behind appropriate access controls; do not expose an unauthenticated endpoint to the public internet.
-- Inline delete buttons expire if torrent identity changes and require confirmation. The explicit `/deldata` command still deletes local data immediately, so use it carefully.
+- Buttons name torrents by ID and info-hash, so an old button never acts on another torrent that came to have its ID. Removing a torrent's data always asks first, `/deldata` included; only `/deldata <id...> confirm`, meant for scripts, deletes at once, so use it carefully.
 
 Please report vulnerabilities according to [SECURITY.md](SECURITY.md), not in a public issue.
 
