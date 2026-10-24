@@ -47,7 +47,7 @@ go install github.com/pyed/transmission-telegram/v2@latest
 | Flag | Environment Variable | Description |
 |---|---|---|
 | `-token` | `TT_BOT_TOKEN` (`TT_BOTT` legacy) | Telegram bot token (*required*) |
-| `-master` | — | Authorized Telegram username or numeric user ID (*required*, repeatable) |
+| `-master` | `TT_MASTERS` (comma-separated) | Authorized Telegram user ID or username (*required*, repeatable); `1` alone is a setup mode that tells whoever writes to the bot their user ID |
 | `-url` | `TR_URL` | Transmission RPC URL (default: `http://localhost:9091/transmission/rpc`) |
 | `-username` | `TR_AUTH` (`user:password`) | Transmission RPC username |
 | `-password` | `TR_AUTH` (`user:password`) | Transmission RPC password |
@@ -99,15 +99,21 @@ transmission-telegram \
 | `/errors` | `/er` | List torrents with errors |
 | `/latest [n]` | `/la` | List newest added torrents |
 | `/search <query>` | `/se` | Search torrents by name |
+| `/labels [label\|-]` | — | Count torrents per label, or list a label's torrents (`-`: those without one); Transmission 3.00+ |
+| `/queue [top\|up\|down\|bottom <id...>]` | `/qu` | Show the download queue, or move torrents in it |
 | `/info <id...>` | `/in` | Show details, progress bar, and interactive control buttons |
 | `/files <id>` | `/fi` | List a torrent's files, ten to a page, to skip them or change their priority |
-| `/add <url/magnet>` | `/ad` | Add torrent by URL or magnet. Sending a `.torrent` file directly in chat also adds it |
+| `/add <url/magnet> [d=folder] [l=label] [paused]` | `/ad` | Add torrents by URL or magnet, optionally to a folder, with labels, or paused. Sending a `.torrent` file, or pasting a link, also adds it, with the same options in its caption or after the link |
 | `/stop <id...\|all>` | `/sp` | Stop specific torrents or all |
 | `/start <id...\|all>` | `/st` | Start specific torrents or all |
 | `/check <id...\|all>` | `/ck` | Verify specific torrents or all |
 | `/del <id...>` | `/rm` | Remove torrent from Transmission |
+| `/move <id...> <folder>` | `/mv` | Move torrents' data to another folder |
+| `/setlabel <id...> <label...\|->` | — | Set torrents' labels, or remove them with `-` |
 | `/deldata <id...> [confirm]` | — | Remove torrents and delete their local files, after asking with buttons; `confirm` deletes at once |
-| `/turtle [on\|off]` | `/alt`, `/tu` | Toggle or set alternative speed limits ("Turtle Mode") |
+| `/turtle [on\|off]` | `/alt`, `/tu` | Toggle or set alternative speed limits ("Turtle Mode"); `/turtle schedule HH:MM-HH:MM [days\|weekdays\|weekends]` or `off` sets Transmission's schedule for them, and `/turtle limits <down> <up>` their limits in KB/s |
+| `/limit [down N] [up N] \| off` | — | Show both global limits and turtle mode, or set the limits in KB/s; `0`/`off` removes one |
+| `/port` | — | Check whether peers can reach Transmission's port |
 | `/free [path]` | `/space`, `/disk` | Show free and total disk space on the download drive |
 | `/reannounce <id...\|all>` | `/ra` | Force tracker re-announce |
 | `/speed` | `/ss` | Display current download and upload speeds |
@@ -119,6 +125,7 @@ transmission-telegram \
 | `/trackers` | `/tr` | List trackers and torrent counts |
 | `/count` | `/co` | Show torrent counts grouped by status |
 | `/notify [on\|off\|<kind> on\|off]` | — | Show or choose this chat's notifications (see [Notifications](#notifications)) |
+| `/whoami` | — | Show your Telegram user ID and the chat's ID |
 | `/help` | — | Display command help |
 | `/version` | `/ver` | Display Transmission daemon and bot version |
 

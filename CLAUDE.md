@@ -26,6 +26,7 @@ named `transmission-telegram`.
 | `internal/bot/card.go` | The torrent card: `cardFields`, `cardKeyboard`, actions (`a:`), removal (`y:`/`n:`), `sendCard`, `torrentFingerprint` |
 | `internal/bot/screens.go` | Paged lists: `listing`, `listPage`, `replyList`, and the `screenStore` of the last 500 list and question messages (`pg:`, `back`) |
 | `internal/bot/files.go` | `/files` and its buttons (`fl:`, `fo:`, `fs:`, `fa:`, `c:`) |
+| `internal/bot/labels.go`, `queue.go`, `turtle.go` | `/labels` and `/setlabel` (RPC 16, Transmission 3.00), `/queue` and `/port`, `/turtle` with its schedule and limits |
 | `internal/bot/commands.go` | `commandTable`: every command's name, aliases, arguments and help; dispatch, `/help` and the Telegram menu are generated from it |
 | `internal/bot/telegram.go` | Sending: HTML helpers (`esc`, `plainText`), UTF-16 lengths, chunking between lines, the `.txt` fallback, `retryTelegram`, `edit` |
 | `internal/bot/format.go` | How torrents look: `torrentLine` (lists), `torrentBlock` (head, tail, active), `torrentCard` (info), icons, sizes, rates |
@@ -100,6 +101,11 @@ before piping test output into `tail` or `grep`, or a failure can hide.
   restarts), asks only for `watchFields`, and is tested through `check` with a
   fake clock and an in-memory `fakeTransmission` (`internal/notify`). Until a
   chat uses `/notify`, completions and outages go to `state.Data.LastChat`.
+- Commands that take IDs and then free text (`/move`, `/setlabel`) take the
+  leading numbers as IDs and the rest as the text, so folders may have spaces.
+- `/add` options (`d=`, `l=`, `paused`) are parsed by `parseAddOptions`, also
+  from a `.torrent` file's caption; labels are set with `torrent-set` after the
+  add, since `torrent-add` takes them only from Transmission 4.0.
 - Actions on several torrents look them up in one request
   (`torrentsNamed`), act in one more, and reply once (`summary`).
 - Tests drive handlers directly against in-process fakes: `newFakeTelegram`
