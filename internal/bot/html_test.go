@@ -91,7 +91,7 @@ func TestRepliesAreValidHTMLAndShowNamesExactly(t *testing.T) {
 		{"version"}, {"help"}, {"sort"}, {"sort", "rev", "size"}, {"sort", "<bad>"}, {"downloaddir", "/media/<a & b>"},
 		{"downlimit", "100"}, {"uplimit", "x<"}, {"limit"}, {"limit", "down", "5"}, {"limit", "<x>"}, {"whoami"}, {"turtle", "on"}, {"turtle", "schedule"}, {"turtle", "schedule", "<x>"}, {"free", "/media/<a & b>"}, {"reannounce", "all"},
 		{"add", "magnet:?xt=urn:btih:<x>&dn=a"}, {"add", "magnet:?xt=urn:btih:x", "d=/<a&b>", "l=<x>", "paused"}, {"add", "<x>=1"}, {"stop", "1", "<x>"}, {"start", "all"}, {"check", "1"},
-		{"del", "1"}, {"move", "1", "/<a & b>"}, {"deldata", "<x>"}, {"notify"}, {"notify", "errors", "on"}, {"notify", "<x>"}, {"nosuchcommand"},
+		{"del", "1"}, {"move", "1", "/<a & b>"}, {"labels"}, {"labels", "<x>"}, {"setlabel", "1", "<x>"}, {"deldata", "<x>"}, {"notify"}, {"notify", "errors", "on"}, {"notify", "<x>"}, {"nosuchcommand"},
 	}
 	for _, command := range commands {
 		before := len(ft.sentTexts())

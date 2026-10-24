@@ -141,6 +141,17 @@ func (b *Bot) listing(ctx context.Context, chatID int64, command string, args []
 		return listing{torrents: hasStatus(transmission.StatusStopped), none: "No paused torrents"}, nil
 	case "checking":
 		return listing{torrents: hasStatus(transmission.StatusChecking, transmission.StatusCheckPending), none: "No torrents verifying"}, nil
+	case "labels":
+		if len(args) == 0 || args[0] == "-" {
+			return listing{torrents: keep(func(t *transmission.Torrent) bool { return len(t.Labels) == 0 }), none: "Every torrent has a label"}, nil
+		}
+		label := strings.Join(args, " ")
+		return listing{
+			torrents: keep(func(t *transmission.Torrent) bool {
+				return slices.ContainsFunc(t.Labels, func(l string) bool { return strings.EqualFold(l, label) })
+			}),
+			none: "No torrent has the label <b>" + esc(label) + "</b>",
+		}, nil
 	case "errors":
 		return listing{
 			torrents: keep(func(t *transmission.Torrent) bool { return t.Error != transmission.ErrorNone }),
