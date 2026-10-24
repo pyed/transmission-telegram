@@ -56,6 +56,15 @@ go mod tidy -diff
 `go test -race` needs a C compiler; CI runs it on Linux. Always `set -o pipefail`
 before piping test output into `tail` or `grep`, or a failure can hide.
 
+```sh
+go test ./internal/bot -run TestREADMEListsEveryCommand -update   # rewrite the README's command list
+TT_TEST_TRANSMISSION_URL=http://localhost:9091/transmission/rpc TT_TEST_TRANSMISSION_AUTH=user:pass \
+  go test -count=1 -run TestAgainstTransmission ./internal/bot/  # against a throwaway Transmission
+```
+
+CI's "Against Transmission" job runs `TestAgainstTransmission` against
+linuxserver's Transmission 4.0.6 and 4.1.3 images, pinned by digest.
+
 ## Conventions
 
 - Every handler gets the update's `ctx`, and every RPC and Telegram call takes
@@ -71,7 +80,10 @@ before piping test output into `tail` or `grep`, or a failure can hide.
   line: long replies are split between lines. `TestRepliesAreValidHTMLAndShowNamesExactly`
   runs every command against hostile names; add new commands to it.
 - A new command goes in `commandTable` only; the menu, `/help`, and dispatch
-  follow. Keep old names and aliases (`TestCommandsKeepTheirNamesAndAliases`).
+  follow, and `-update` rewrites the README's list from it
+  (`TestREADMEListsEveryCommand` fails until it matches). Keep old names and
+  aliases (`TestCommandsKeepTheirNamesAndAliases`), and give a new command a
+  step in `TestAgainstTransmission` when it changes what Transmission does.
 - Authorization is by user: `Config.Masters.Contains(username, userID)` for
   messages, and the same check on `cb.From` for button presses.
 - Buttons: callback data is `<verb>:<arguments>`, at most 64 bytes, and names
@@ -167,7 +179,9 @@ before piping test output into `tail` or `grep`, or a failure can hide.
   system provides.
 - Pushing a `v*` tag runs `.github/workflows/release.yml`: it verifies the
   commit, builds archives for 11 platforms with checksums, publishes a GitHub
-  release, and then pushes a five-platform image to
+  release whose notes are the annotated tag's message after its first line
+  (then GitHub's list of merged pull requests), and then pushes a
+  five-platform image to
   `ghcr.io/pyed/transmission-telegram` (tags `X.Y.Z`, `X.Y`, `vX.Y.Z`,
   `latest`). CI builds the same five platforms on every push. Never re-create a
   pushed tag; bump the patch version instead.
@@ -178,5 +192,7 @@ before piping test output into `tail` or `grep`, or a failure can hide.
   image together.
 - The Dockerfile's runtime stage must stay free of `RUN` steps, so buildx can
   build every platform without emulation.
+- A tag message's lines that start with `#` are dropped by git's default
+  cleanup, so release notes use bold lines, not Markdown headings.
 - Dependabot opens monthly grouped updates for Go modules, Actions, and the
   Docker base images.
