@@ -458,6 +458,35 @@ func summary(done string, torrents transmission.Torrents, problems []string) str
 	return strings.Join(lines, "\n")
 }
 
+// move has Transmission move torrents' data to another folder: /move
+// <id…> <folder>. The leading arguments that are numbers are IDs, and the
+// rest is the folder, which may have spaces.
+func (b *Bot) move(ctx context.Context, r *request) {
+	ids := 0
+	for ids < len(r.args) {
+		if _, err := strconv.Atoi(r.args[ids]); err != nil {
+			break
+		}
+		ids++
+	}
+	if ids == 0 || ids == len(r.args) {
+		b.reply(ctx, r, "<b>move:</b> give the torrents' IDs and then the folder: <code>/move 5 7 /media/Movies</code>")
+		return
+	}
+	folder := strings.Join(r.args[ids:], " ")
+	torrents, problems, ok := b.torrentsNamed(ctx, &request{chatID: r.chatID, args: r.args[:ids]}, "move")
+	if !ok {
+		return
+	}
+	if len(torrents) > 0 {
+		if err := b.Client.SetTorrentLocation(ctx, folder, true, torrents.GetIDs()...); err != nil {
+			b.replyError(ctx, r, "move", err)
+			return
+		}
+	}
+	b.reply(ctx, r, summary("Moving to <code>"+esc(folder)+"</code>", torrents, problems))
+}
+
 // reannounce asks trackers for peers now, for torrents or all of them.
 func (b *Bot) reannounce(ctx context.Context, r *request) {
 	if len(r.args) == 0 {

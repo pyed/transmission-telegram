@@ -269,6 +269,34 @@ func TestActionsOnSeveralTorrents(t *testing.T) {
 	}
 }
 
+// /move moves the named torrents' data, to a folder that may have spaces,
+// in one request.
+func TestMove(t *testing.T) {
+	ft := newFakeTelegram(t)
+	fts := newFakeTransmission(t)
+	fts.torrents = transmission.Torrents{{ID: 1, Name: "One"}, {ID: 2, Name: "Two"}}
+	client, err := transmission.New(fts.URL+"/transmission/rpc", "", "")
+	if err != nil {
+		t.Fatalf("failed to create transmission client: %v", err)
+	}
+	b := newTestBot(t, ft.newBot(t), client)
+	ctx := context.Background()
+
+	b.move(ctx, req("1", "2", "9", "/media/My", "Movies"))
+	b.move(ctx, req("/media/x"))
+	b.move(ctx, req("1"))
+
+	want := []string{`{"method":"torrent-set-location","arguments":{"ids":[1,2],"location":"/media/My Movies","move":true}}`}
+	if got := fts.requestBodies("torrent-set-location"); !slices.Equal(got, want) {
+		t.Fatalf("torrent-set-location requests = %q", got)
+	}
+	texts := ft.sentTexts()
+	if len(texts) != 3 || texts[0] != "<b>Moving to <code>/media/My Movies</code>:</b>\n<code>1</code> One\n<code>2</code> Two\n⚠️ No torrent has the ID 9" ||
+		!strings.HasPrefix(texts[1], "<b>move:</b> give") || texts[2] != texts[1] {
+		t.Fatalf("replies = %q", texts)
+	}
+}
+
 // /add takes a download folder, labels, and paused among its links, and a
 // .torrent file takes them from its caption; labels are set after adding,
 // as Transmission before 4.0 takes them only that way.

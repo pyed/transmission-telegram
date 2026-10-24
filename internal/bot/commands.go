@@ -51,6 +51,7 @@ func commandTable() []commandSection {
 			{"stop", []string{"sp"}, "<id…|all>", "Pause torrents", (*Bot).stop},
 			{"start", []string{"st"}, "<id…|all>", "Resume torrents", (*Bot).start},
 			{"check", []string{"ck"}, "<id…|all>", "Verify torrents' data", (*Bot).check},
+			{"move", []string{"mv"}, "<id…> <folder>", "Move torrents' data to another folder", (*Bot).move},
 			{"reannounce", []string{"ra"}, "<id…|all>", "Ask trackers for peers now", (*Bot).reannounce},
 			{"del", []string{"rm"}, "<id…>", "Remove torrents and keep their data", (*Bot).del},
 			{"deldata", nil, "<id…> [confirm]", "Remove torrents and delete their data, after asking", (*Bot).deldata},
