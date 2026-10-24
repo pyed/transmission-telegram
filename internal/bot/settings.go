@@ -243,51 +243,6 @@ func describeLimit(limit int64, enabled bool) string {
 	return fmt.Sprintf("%d KB/s", limit)
 }
 
-// turtle toggles or sets alternative speed limits ("Turtle Mode").
-func (b *Bot) turtle(ctx context.Context, r *request) {
-	const usage = "<b>turtle:</b> expected on or off"
-	var requested *bool
-	if len(r.args) > 1 {
-		b.reply(ctx, r, usage)
-		return
-	}
-	if len(r.args) == 1 {
-		var enabled bool
-		switch strings.ToLower(r.args[0]) {
-		case "on", "1", "true", "enable":
-			enabled = true
-		case "off", "0", "false", "disable":
-			enabled = false
-		default:
-			b.reply(ctx, r, usage)
-			return
-		}
-		requested = &enabled
-	}
-
-	sess, err := b.Client.GetSession(ctx)
-	if err != nil {
-		b.replyError(ctx, r, "turtle", err)
-		return
-	}
-
-	enabled := !sess.AltSpeedEnabled
-	if requested != nil {
-		enabled = *requested
-	}
-
-	if err := b.Client.SetAltSpeedEnabled(ctx, enabled); err != nil {
-		b.replyError(ctx, r, "turtle", err)
-		return
-	}
-
-	if enabled {
-		b.reply(ctx, r, fmt.Sprintf("🐢 <b>Turtle mode enabled</b> (limits: ↓ %d KB/s  ↑ %d KB/s)", sess.AltSpeedDown, sess.AltSpeedUp))
-	} else {
-		b.reply(ctx, r, "🐇 <b>Turtle mode disabled</b>")
-	}
-}
-
 // free shows the free disk space where Transmission downloads, or at a path.
 func (b *Bot) free(ctx context.Context, r *request) {
 	path := strings.Join(r.args, " ")

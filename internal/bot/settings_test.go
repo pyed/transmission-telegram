@@ -283,6 +283,48 @@ func TestLimit(t *testing.T) {
 	}
 }
 
+// /turtle schedule sets when Transmission switches turtle mode by itself,
+// across midnight and on chosen days, and /turtle limits sets its limits.
+func TestTurtleScheduleAndLimits(t *testing.T) {
+	ft := newFakeTelegram(t)
+	fts := newFakeTransmission(t)
+	fts.session = `{"version":"test","alt-speed-time-enabled":true,"alt-speed-time-begin":1380,"alt-speed-time-end":420,` +
+		`"alt-speed-time-day":65,"alt-speed-down":40,"alt-speed-up":10}`
+	client, err := transmission.New(fts.URL+"/transmission/rpc", "", "")
+	if err != nil {
+		t.Fatalf("failed to create transmission client: %v", err)
+	}
+	b := newTestBot(t, ft.newBot(t), client)
+	ctx := context.Background()
+
+	b.turtle(ctx, req("schedule"))
+	b.turtle(ctx, req("SCHEDULE", "23:00-07:00", "weekdays"))
+	b.turtle(ctx, req("schedule", "01:30-05:00", "mon,wednesday", "sat"))
+	b.turtle(ctx, req("schedule", "off"))
+	b.turtle(ctx, req("limits", "100", "20"))
+	b.turtle(ctx, req("schedule", "25:00-01:00"))
+	b.turtle(ctx, req("schedule", "10:00-10:00"))
+	b.turtle(ctx, req("schedule", "10:00-11:00", "someday"))
+
+	want := []string{
+		`{"method":"session-set","arguments":{"alt-speed-time-begin":1380,"alt-speed-time-day":62,"alt-speed-time-enabled":true,"alt-speed-time-end":420}}`,
+		`{"method":"session-set","arguments":{"alt-speed-time-begin":90,"alt-speed-time-day":74,"alt-speed-time-enabled":true,"alt-speed-time-end":300}}`,
+		`{"method":"session-set","arguments":{"alt-speed-time-enabled":false}}`,
+		`{"method":"session-set","arguments":{"alt-speed-down":100,"alt-speed-up":20}}`,
+	}
+	if got := fts.requestBodies("session-set"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("session-set requests:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	texts := ft.sentTexts()
+	if texts[0] != "🐢 <b>Turtle schedule:</b> 23:00–07:00, weekends (↓ 40 KB/s ↑ 10 KB/s)" || texts[4] != "🐢 <b>Turtle limits:</b> ↓ 100 KB/s ↑ 20 KB/s" ||
+		texts[5] != turtleUsage || texts[6] != turtleUsage || texts[7] != turtleUsage {
+		t.Fatalf("replies = %q", texts)
+	}
+	if got := describeDays(74); got != "Mon, Wed, Sat" {
+		t.Fatalf("describeDays(74) = %q", got)
+	}
+}
+
 func TestTurtleRejectsInvalidArgument(t *testing.T) {
 	ft := newFakeTelegram(t)
 	fts := newFakeTransmission(t)
@@ -299,7 +341,7 @@ func TestTurtleRejectsInvalidArgument(t *testing.T) {
 		t.Fatalf("invalid turtle argument performed an RPC: before=%d after=%d", baselineSessionGets, got)
 	}
 	texts := ft.sentTexts()
-	if len(texts) == 0 || texts[len(texts)-1] != "<b>turtle:</b> expected on or off" {
+	if len(texts) == 0 || texts[len(texts)-1] != turtleUsage {
 		t.Fatalf("unexpected turtle response: %v", texts)
 	}
 }
