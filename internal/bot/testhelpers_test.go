@@ -27,17 +27,16 @@ const testBotUsername = "MyTransmissionBot"
 // fakeTelegram is a minimal in-process Telegram Bot API server for tests.
 type fakeTelegram struct {
 	*httptest.Server
-	mu              sync.Mutex
-	texts           []string
-	chats           []string
-	parseModes      []string
-	documents       []string
-	callbackTexts   []string
-	markupEditCalls int
-	textEditCalls   int
-	edits           [][2]string // message ID and text of each text edit
-	fileBytes       []byte
-	lastMessageID   int
+	mu            sync.Mutex
+	texts         []string
+	chats         []string
+	parseModes    []string
+	documents     []string
+	callbackTexts []string
+	textEditCalls int
+	edits         [][2]string // message ID and text of each text edit
+	fileBytes     []byte
+	lastMessageID int
 
 	// answers holds bodies for a method's next calls, in order, given
 	// instead of its usual answer; calls counts each method's calls.
@@ -111,9 +110,6 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 			f.mu.Unlock()
 			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
 		case "editMessageReplyMarkup":
-			f.mu.Lock()
-			f.markupEditCalls++
-			f.mu.Unlock()
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1,"date":1,"chat":{"id":42,"type":"private"}}}`))
 		case "editMessageText":
 			f.mu.Lock()
@@ -205,12 +201,6 @@ func (f *fakeTelegram) callbackAnswers() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.callbackTexts...)
-}
-
-func (f *fakeTelegram) markupEdits() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.markupEditCalls
 }
 
 func (f *fakeTelegram) textEdits() int {
