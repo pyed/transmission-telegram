@@ -38,6 +38,21 @@ Go 1.26 or newer is required; an older 1.26 release downloads Go 1.26.10, the fi
 go install github.com/pyed/transmission-telegram/v2@latest
 ```
 
+### Start with the system
+
+`-install` saves the settings you give it, from flags, a config file, or the environment, to a config file only you can read, checks that Telegram takes the token and that Transmission answers, and installs a service that runs `transmission-telegram -config FILE`:
+
+- **Linux** (systemd): run as yourself, a user service, which starts at boot when your user may linger; with `sudo`, a system service that runs as you.
+- **macOS** (launchd): a LaunchAgent that starts when you log in; with `sudo`, a LaunchDaemon that starts at boot.
+- **Windows**: from an elevated prompt, a service that starts with Windows and logs next to its config file.
+
+```bash
+TT_BOT_TOKEN=123456789:replace-with-your-token transmission-telegram -install \
+  -master=123456789 -url=http://localhost:9091/transmission/rpc
+```
+
+It says where it saved the settings and where the logs are, and how to restart the service after editing the settings. `transmission-telegram -uninstall` removes the service and keeps the settings.
+
 ---
 
 ## Configuration
@@ -58,6 +73,8 @@ go install github.com/pyed/transmission-telegram/v2@latest
 | `-watch-interval` | — | How often to check Transmission for notifications (default: `10s`) |
 | `-low-disk` | — | Free space below which chats that chose `disk` notifications are warned (default: `5GB`; `0` turns it off) |
 | `-config` | — | Read settings from a file (see below) |
+| `-install` | — | Save the settings to a config file and start the bot with the system (see [Start with the system](#start-with-the-system)) |
+| `-uninstall` | — | Stop starting the bot with the system; its settings are kept |
 | `-version` | — | Print the version and exit |
 
 Flags given on the command line win over a config file, and the file over environment variables. Prefer numeric Telegram user IDs for `-master`; unlike usernames, they cannot be renamed or reassigned.

@@ -30,8 +30,9 @@ func init() {
 
 type MasterSlice []string
 
+// String lists the masters separated by commas, as Set takes them.
 func (masters *MasterSlice) String() string {
-	return fmt.Sprintf("%s", *masters)
+	return strings.Join(*masters, ",")
 }
 
 // Set adds a master, or several separated by commas or spaces, as
@@ -119,6 +120,18 @@ type Config struct {
 	// config file other users may read.
 	Warnings []string
 
+	// Install asks for the bot to be installed as a service that starts
+	// with the system, with these settings, rather than to run.
+	Install bool
+	// Uninstall asks for the service to be removed; nothing else is read.
+	Uninstall bool
+	// Settings are the settings given by flag, config file, or
+	// environment, by flag name, which -install saves to a config file.
+	Settings map[string]string
+	// RewriteConfig reports whether -install must write the config file:
+	// settings came from elsewhere than an existing config file.
+	RewriteConfig bool
+
 	// ShowVersion asks only for the version to be printed; nothing else
 	// is validated.
 	ShowVersion bool
@@ -127,7 +140,8 @@ type Config struct {
 func Parse() *Config {
 	flag.Usage = func() {
 		fmt.Fprint(os.Stderr, "Usage: transmission-telegram <-token=TOKEN> <-master=123456789> [-master=987654321] [-url=http://] [-username=user] [-password=pass]\n"+
-			"       transmission-telegram -config=FILE\n\n")
+			"       transmission-telegram -config=FILE\n"+
+			"       transmission-telegram -install [settings] | -uninstall\n\n")
 		flag.PrintDefaults()
 	}
 
@@ -167,6 +181,9 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	lowDisk := fs.String("low-disk", "5GB", "Warn the chats that want it when free space falls below this size; 0 turns it off")
 	fs.StringVar(&cfg.ConfigFile, "config", "", "Read settings from this file: a flag name and its value per line, such as token = 123:abc; "+
 		"flags win over the file, and the file over the environment")
+	fs.BoolVar(&cfg.Install, "install", false, "Save these settings to a config file (-config's, if given), and start transmission-telegram "+
+		"with the system: with systemd, launchd, or as a Windows service")
+	fs.BoolVar(&cfg.Uninstall, "uninstall", false, "Stop starting transmission-telegram with the system; its settings are kept")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "Print the version and exit")
 
 	if err := fs.Parse(args); err != nil {
@@ -175,36 +192,57 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	if cfg.ShowVersion {
 		return cfg, nil
 	}
+	if cfg.Install && cfg.Uninstall {
+		return nil, errors.New("-install and -uninstall cannot be used together")
+	}
+	if cfg.Uninstall {
+		return cfg, nil
+	}
+
+	// Settings from elsewhere than an existing config file are for
+	// -install to save there.
+	cfg.RewriteConfig = cfg.ConfigFile == ""
+	fs.Visit(func(f *flag.Flag) { cfg.RewriteConfig = cfg.RewriteConfig || !nonSettings[f.Name] })
 	if cfg.ConfigFile != "" {
-		warning, err := applyConfigFile(fs, cfg.ConfigFile)
-		if err != nil {
-			return nil, err
-		}
-		if warning != "" {
-			cfg.Warnings = append(cfg.Warnings, warning)
+		if _, err := os.Stat(cfg.ConfigFile); cfg.Install && errors.Is(err, os.ErrNotExist) {
+			// -install writes it.
+			cfg.RewriteConfig = true
+		} else {
+			warning, err := applyConfigFile(fs, cfg.ConfigFile)
+			if err != nil {
+				return nil, err
+			}
+			if warning != "" {
+				cfg.Warnings = append(cfg.Warnings, warning)
+			}
 		}
 	}
 
+	// The environment gives what neither flags nor the config file did.
 	given := make(map[string]bool)
 	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
-	if !given["token"] {
-		cfg.BotToken = getenv("TT_BOT_TOKEN")
-		if strings.TrimSpace(cfg.BotToken) == "" {
-			cfg.BotToken = getenv("TT_BOTT")
+	token := getenv("TT_BOT_TOKEN")
+	if strings.TrimSpace(token) == "" {
+		token = getenv("TT_BOTT")
+	}
+	username, password, found := strings.Cut(getenv("TR_AUTH"), ":")
+	if !found {
+		username, password = "", ""
+	}
+	for _, setting := range []struct{ name, variable, value string }{
+		{"token", "TT_BOT_TOKEN", token},
+		{"master", "TT_MASTERS", getenv("TT_MASTERS")},
+		{"url", "TR_URL", strings.TrimSpace(getenv("TR_URL"))},
+		{"state", "TT_STATE", strings.TrimSpace(getenv("TT_STATE"))},
+		{"username", "TR_AUTH", username},
+		{"password", "TR_AUTH", password},
+	} {
+		if given[setting.name] || strings.TrimSpace(setting.value) == "" {
+			continue
 		}
-	}
-	if rpcURL := strings.TrimSpace(getenv("TR_URL")); !given["url"] && rpcURL != "" {
-		cfg.RPCURL = rpcURL
-	}
-	if stateFile := strings.TrimSpace(getenv("TT_STATE")); !given["state"] && stateFile != "" {
-		cfg.StateFile = stateFile
-	}
-	if username, password, ok := strings.Cut(getenv("TR_AUTH"), ":"); ok {
-		if !given["username"] {
-			cfg.Username = username
-		}
-		if !given["password"] {
-			cfg.Password = password
+		cfg.RewriteConfig = true
+		if err := fs.Set(setting.name, setting.value); err != nil {
+			return nil, fmt.Errorf("%s: %w", setting.variable, err)
 		}
 	}
 
@@ -212,11 +250,6 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	cfg.RPCURL = strings.TrimSpace(cfg.RPCURL)
 	if cfg.BotToken == "" {
 		return nil, errors.New("telegram bot token is required (-token, a config file, or TT_BOT_TOKEN)")
-	}
-	if masters := getenv("TT_MASTERS"); !given["master"] && strings.TrimSpace(masters) != "" {
-		if err := cfg.Masters.Set(masters); err != nil {
-			return nil, err
-		}
 	}
 	if len(cfg.Masters) < 1 {
 		return nil, errors.New("at least one authorized user is required (-master, a config file, or TT_MASTERS); start with -master=1 to have the bot tell you your user ID")
@@ -237,5 +270,11 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 		cfg.Masters[i] = strings.TrimPrefix(strings.TrimSpace(cfg.Masters[i]), "@")
 	}
 
+	cfg.Settings = make(map[string]string)
+	fs.Visit(func(f *flag.Flag) {
+		if !nonSettings[f.Name] {
+			cfg.Settings[f.Name] = f.Value.String()
+		}
+	})
 	return cfg, nil
 }

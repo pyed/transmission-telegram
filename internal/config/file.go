@@ -11,7 +11,7 @@ import (
 
 // nonSettings are the flags that act rather than configure, which a config
 // file cannot hold.
-var nonSettings = map[string]bool{"config": true, "version": true}
+var nonSettings = map[string]bool{"config": true, "install": true, "uninstall": true, "version": true}
 
 // secretSettings are the settings that hold a secret.
 var secretSettings = map[string]bool{"token": true, "password": true}

@@ -4,3 +4,5 @@ github.com/go-telegram/bot v1.27.0 h1:PG9yBDzM8O26oUerE9SZwWlHon4RpH8WcNslZ7CEZm
 github.com/go-telegram/bot v1.27.0/go.mod h1:i2TRs7fXWIeaceF3z7KzsMt/he0TwkVC680mvdTFYeM=
 github.com/pyed/transmission v1.0.0 h1:nWZh1iJG8Yuc6qQRpQjjHoeIURVg+aGBUz0260hdtaU=
 github.com/pyed/transmission v1.0.0/go.mod h1:gFw9Dt7x4EugnXuUDPGe6c4kaHOtOM92oglNJSQNqsQ=
+golang.org/x/sys v0.49.0 h1:XbzkgYJHdqh/8m2Uu0W/dQv8nktxx4BFHp1M0gROTXA=
+golang.org/x/sys v0.49.0/go.mod h1:hNLxWAXmnKAxqDtdwIYC4bM9oQPEecfsnNMuSxOs3og=
