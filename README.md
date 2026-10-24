@@ -14,7 +14,7 @@
 ## Key Features
 
 - ⚡ **Modern Telegram Bot Engine**: Built with [`github.com/go-telegram/bot`](https://github.com/go-telegram/bot) with native graceful shutdown, context propagation, and structured `log/slog` logging.
-- 🎛 **Interactive Inline Buttons**: Pause, resume, and delete torrents from `/info`; destructive inline deletion requires an explicit confirmation.
+- 🎛 **Interactive Buttons**: Lists come ten torrents a page, with a button for each torrent that opens its card; cards pause, resume, verify, reannounce, and remove torrents, with or without their data (asking first); `/files` skips files or changes their priority; notifications open the torrent's card.
 - 📊 **Visual Progress Bars**: Clean Unicode progress bars (`[█████░░░░░] 50.0%`) on `/head`, `/tail`, `/active`, `/paused`, `/checking`, and `/info`.
 - 🔔 **Operational Alerts**: Receive completion notifications plus one-shot Transmission outage and recovery alerts by watching Transmission over RPC, which works with Transmission running anywhere, Docker included.
 - 🐢 **Turtle Mode & Utilities**: Instant speed toggling (`/turtle`), free disk space checker (`/free`), and manual tracker re-announcing (`/reannounce`).
@@ -100,12 +100,13 @@ transmission-telegram \
 | `/latest [n]` | `/la` | List newest added torrents |
 | `/search <query>` | `/se` | Search torrents by name |
 | `/info <id...>` | `/in` | Show details, progress bar, and interactive control buttons |
+| `/files <id>` | `/fi` | List a torrent's files, ten to a page, to skip them or change their priority |
 | `/add <url/magnet>` | `/ad` | Add torrent by URL or magnet. Sending a `.torrent` file directly in chat also adds it |
 | `/stop <id...\|all>` | `/sp` | Stop specific torrents or all |
 | `/start <id...\|all>` | `/st` | Start specific torrents or all |
 | `/check <id...\|all>` | `/ck` | Verify specific torrents or all |
 | `/del <id...>` | `/rm` | Remove torrent from Transmission |
-| `/deldata <id...>` | — | Remove torrent and delete local files from disk |
+| `/deldata <id...> [confirm]` | — | Remove torrents and delete their local files, after asking with buttons; `confirm` deletes at once |
 | `/turtle [on\|off]` | `/alt`, `/tu` | Toggle or set alternative speed limits ("Turtle Mode") |
 | `/free [path]` | `/space`, `/disk` | Show free and total disk space on the download drive |
 | `/reannounce <id...\|all>` | `/ra` | Force tracker re-announce |

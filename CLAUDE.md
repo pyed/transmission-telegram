@@ -21,7 +21,11 @@ named `transmission-telegram`.
 | `main.go` | Entry point: config, logger, Transmission client, bot, completion watcher |
 | `internal/redact` | `URL` and `Error` keep credentials and query tokens out of logged URLs and request errors |
 | `internal/config` | Flags and environment (`ParseFlags`), `MasterSlice` (authorized users), `Version` |
-| `internal/bot/bot.go` | `Bot`, `New` (startup calls to Telegram, retried), `request`, `reply`, update dispatch (`handleUpdate`), callback buttons, panic recovery |
+| `internal/bot/bot.go` | `Bot`, `New` (startup calls to Telegram, retried), `request`, `reply`, update dispatch (`dispatch`, `serveChat`, `handleUpdate`), panic recovery, `SendHTML`/`OpenButton` for the watcher |
+| `internal/bot/buttons.go` | The button router (`handleCallbackQuery`): verbs, v2.x `cmd:` buttons (`legacyPress`), `pressedTorrent`, `editPressed`, `answerCallback` |
+| `internal/bot/card.go` | The torrent card: `cardFields`, `cardKeyboard`, actions (`a:`), removal (`y:`/`n:`), `sendCard`, `torrentFingerprint` |
+| `internal/bot/screens.go` | Paged lists: `listing`, `listPage`, `replyList`, and the `screenStore` of the last 500 list and question messages (`pg:`, `back`) |
+| `internal/bot/files.go` | `/files` and its buttons (`fl:`, `fo:`, `fs:`, `fa:`, `c:`) |
 | `internal/bot/commands.go` | `commandTable`: every command's name, aliases, arguments and help; dispatch, `/help` and the Telegram menu are generated from it |
 | `internal/bot/telegram.go` | Sending: HTML helpers (`esc`, `plainText`), UTF-16 lengths, chunking between lines, the `.txt` fallback, `retryTelegram`, `edit` |
 | `internal/bot/format.go` | How torrents look: `torrentLine` (lists), `torrentBlock` (head, tail, active), `torrentCard` (info), icons, sizes, rates |
@@ -67,10 +71,18 @@ before piping test output into `tail` or `grep`, or a failure can hide.
   follow. Keep old names and aliases (`TestCommandsKeepTheirNamesAndAliases`).
 - Authorization is by user: `Config.Masters.Contains(username, userID)` for
   messages, and the same check on `cb.From` for button presses.
-- Button callback data is `cmd:<action>:<id>:<fingerprint>`, the fingerprint
-  being the first 16 characters of the info-hash (`torrentFingerprint`), so an
-  old button cannot act on a different torrent that reuses the ID. Destructive
-  buttons ask for confirmation first.
+- Buttons: callback data is `<verb>:<arguments>`, at most 64 bytes, and names
+  a torrent by ID and fingerprint (the first 16 characters of its info-hash,
+  `torrentFingerprint`), so an old button never acts on another torrent that
+  came to have its ID. Every press is answered, and only masters may press.
+  Card (`a:`, `y:`, `n:`, `t:`, `c:`) and file (`fl:`, `fo:`, `fs:`, `fa:`)
+  buttons carry all they need and work after restarts; `pg:`, `back` and
+  `dd:` (the `/deldata` question) need the message in the `screenStore`, in
+  memory, and say they are too old when it is gone. Removing data always asks
+  first. A press ends the pressed card's live view (`stopLive`, which waits for
+  an edit under way). The `cmd:` buttons of v2.x cards still work.
+- List commands make a `listing` in `b.listing`, which page buttons run again,
+  so pages show fresh data; add a new list there and in `TestEveryListCommandHasPages`.
 - Updates go through `dispatch`: the library hands them over one at a time
   (`WithNotAsyncHandlers`), and each master chat gets a queue and a goroutine
   of its own (`serveChat`), so a chat's commands run in order and chats run
