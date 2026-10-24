@@ -38,6 +38,8 @@ type fakeTransmission struct {
 	addAnswer string
 	// stats is session-stats' arguments, as JSON; zeros when empty.
 	stats string
+	// answers holds other methods' arguments, as JSON; none when absent.
+	answers map[string]string
 }
 
 // set changes the fake under its lock.
@@ -133,7 +135,13 @@ func newFakeTransmission(t *testing.T) *fakeTransmission {
 				}{Torrents: torrents},
 			})
 		default:
-			_, _ = w.Write([]byte(`{"result":"success","arguments":{}}`))
+			f.mu.Lock()
+			answer, ok := f.answers[req.Method]
+			f.mu.Unlock()
+			if !ok {
+				answer = `{}`
+			}
+			_, _ = fmt.Fprintf(w, `{"result":"success","arguments":%s}`, answer)
 		}
 	}))
 	t.Cleanup(f.Close)

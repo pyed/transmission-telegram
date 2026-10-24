@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -141,6 +142,10 @@ func (b *Bot) listing(ctx context.Context, chatID int64, command string, args []
 		return listing{torrents: hasStatus(transmission.StatusStopped), none: "No paused torrents"}, nil
 	case "checking":
 		return listing{torrents: hasStatus(transmission.StatusChecking, transmission.StatusCheckPending), none: "No torrents verifying"}, nil
+	case "queue":
+		queued := hasStatus(transmission.StatusDownloading, transmission.StatusDownloadPending)
+		slices.SortStableFunc(queued, func(a, b *transmission.Torrent) int { return cmp.Compare(a.QueuePosition, b.QueuePosition) })
+		return listing{torrents: queued, none: "Nothing is downloading or waiting to"}, nil
 	case "labels":
 		if len(args) == 0 || args[0] == "-" {
 			return listing{torrents: keep(func(t *transmission.Torrent) bool { return len(t.Labels) == 0 }), none: "Every torrent has a label"}, nil
