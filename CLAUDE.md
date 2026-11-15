@@ -199,8 +199,8 @@ linuxserver's Transmission 4.0.6 and 4.1.3 images, pinned by digest.
   `latest`). A tag with a `-`, such as `v2.3.0-rc.1`, is a pre-release. CI
   builds the same five platforms on every push. Never re-create a pushed tag;
   bump the patch version instead.
-- Go versions: `go.mod` says `go 1.26.0` with `toolchain go1.26.10`; CI tests
-  Go 1.26.10 and 1.27.3, and releases and the Docker build use 1.27.3. When
+- Go versions: `go.mod` says `go 1.26.0` with `toolchain go1.26.11`; CI tests
+  Go 1.26.11 and 1.27.4, and releases and the Docker build use 1.27.4. When
   govulncheck reports a fixed standard-library vulnerability, move the
   toolchain line, the CI matrix, `release.yml`, and the Dockerfile's `golang`
   image together.

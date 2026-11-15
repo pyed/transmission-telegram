@@ -56,7 +56,7 @@ gh attestation verify oci://ghcr.io/pyed/transmission-telegram:2.2.1 --repo pyed
 
 ### With Go
 
-Go 1.26 or newer is required; an older 1.26 release downloads Go 1.26.10, the first without known vulnerabilities that affect the bot.
+Go 1.26 or newer is required; an older 1.26 release downloads Go 1.26.11, the first without known vulnerabilities that affect the bot.
 
 ```bash
 go install github.com/pyed/transmission-telegram/v2@latest
