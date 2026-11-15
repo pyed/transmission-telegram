@@ -129,7 +129,8 @@ func run(ctx context.Context, cfg *config.Config, output io.Writer) error {
 		Interval:     cfg.WatchInterval,
 		LowDisk:      cfg.LowDisk,
 	}
-	go watcher.Run(ctx)
+	// Shutdown waits for it, as for the bot's own background work.
+	b.Background(ctx, "notification watcher", watcher.Run)
 
 	// Run the bot (blocks until context is cancelled)
 	b.Start(ctx)

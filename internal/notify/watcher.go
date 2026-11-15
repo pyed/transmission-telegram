@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
@@ -139,13 +140,24 @@ func (w *Watcher) Run(ctx context.Context) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		w.check(ctx)
+		w.checkSafely(ctx)
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 		}
 	}
+}
+
+// checkSafely checks once; a panic is logged, and the next check goes on,
+// rather than ending notifications, or the bot.
+func (w *Watcher) checkSafely(ctx context.Context) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			w.Logger.Error("Recovered from a panic in the notification watcher", "panic", recovered, "stack", string(debug.Stack()))
+		}
+	}()
+	w.check(ctx)
 }
 
 func (w *Watcher) clock() time.Time {
@@ -242,7 +254,8 @@ func (w *Watcher) check(ctx context.Context) {
 }
 
 // forgetAllBut forgets the torrents not in torrents, which are all there
-// are.
+// are, including those not done when the bot last ran that were removed
+// while it was away: they would otherwise stay in the state for good.
 func (w *Watcher) forgetAllBut(torrents transmission.Torrents) {
 	present := make(map[string]bool, len(torrents))
 	for _, t := range torrents {
@@ -251,6 +264,11 @@ func (w *Watcher) forgetAllBut(torrents transmission.Torrents) {
 	for id, hash := range w.ids {
 		if !present[hash] {
 			delete(w.ids, id)
+		}
+	}
+	for hash := range w.away {
+		if !present[hash] {
+			delete(w.away, hash)
 		}
 	}
 	for hash := range w.done {
@@ -455,9 +473,13 @@ func (w *Watcher) resendPending(ctx context.Context, now time.Time) {
 
 // refused reports whether Telegram refused a message for good: the chat
 // blocked the bot or is gone, or the message is wrong.
+// A group that became a supergroup is refused too: what is sent there
+// never goes through, and waiting would hold up every other notification.
 func refused(err error) bool {
+	var migrated *tgbot.MigrateError
 	return errors.Is(err, tgbot.ErrorForbidden) || errors.Is(err, tgbot.ErrorBadRequest) ||
-		errors.Is(err, tgbot.ErrorNotFound) || errors.Is(err, tgbot.ErrorUnauthorized) || errors.Is(err, context.Canceled)
+		errors.Is(err, tgbot.ErrorNotFound) || errors.Is(err, tgbot.ErrorUnauthorized) || errors.Is(err, context.Canceled) ||
+		errors.As(err, &migrated)
 }
 
 // Chats returns the chats that get notifications of kind: those that chose
