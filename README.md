@@ -47,7 +47,12 @@
 
 ### Pre-compiled binaries
 
-Download an archive for Linux, macOS, Windows, or FreeBSD from the [Releases](https://github.com/pyed/transmission-telegram/releases) page. Each release includes SHA-256 checksums.
+Download an archive for Linux, macOS, Windows, or FreeBSD from the [Releases](https://github.com/pyed/transmission-telegram/releases) page. Each release includes SHA-256 checksums, and from 2.2.1, attestations that its archives and image were built by this repository's release workflow, which the [GitHub CLI](https://cli.github.com) checks:
+
+```bash
+gh attestation verify transmission-telegram_v2.2.1_linux_amd64.tar.gz --repo pyed/transmission-telegram
+gh attestation verify oci://ghcr.io/pyed/transmission-telegram:2.2.1 --repo pyed/transmission-telegram
+```
 
 ### With Go
 
@@ -67,7 +72,7 @@ The image is `ghcr.io/pyed/transmission-telegram`, for amd64, arm64, armv7, armv
 
 - **Linux** (systemd): run as yourself, a user service, which starts at boot when your user may linger; with `sudo`, a system service that runs as you.
 - **macOS** (launchd): a LaunchAgent that starts when you log in; with `sudo`, a LaunchDaemon that starts at boot.
-- **Windows**: from an elevated prompt, a service that starts with Windows and logs next to its config file.
+- **Windows**: from an elevated prompt, a service that starts with Windows. It runs as LocalSystem, so it runs a copy of the program in `%ProgramData%\transmission-telegram`, which holds its settings, state, and logs too, and which only administrators can change. Run `-install` again after upgrading, so that the service runs the new version.
 
 ```bash
 TT_BOT_TOKEN=123456789:replace-with-your-token transmission-telegram -install \
@@ -139,7 +144,7 @@ Pasting a link without `/add` also adds it, with the options after it, and so do
 
 `/limit` shows the global speed limits and turtle mode; `/limit down 500 up 100` sets the limits in KB/s, `0` or `off` removes one, and `/limit off` removes both. `/downlimit` and `/uplimit` set one each.
 
-`/turtle` switches turtle mode, Transmission's alternative speed limits, on or off. `/turtle limits 50 10` sets those limits, and `/turtle schedule 01:00-07:00 weekdays` has Transmission switch turtle mode on and off by itself; give the days as `weekdays`, `weekends`, or names such as `mon,wed,fri`, and `/turtle schedule off` to stop.
+`/turtle` switches turtle mode, Transmission's alternative speed limits, on or off. `/turtle limits 50 10` sets those limits, of 1 KB/s or more, and `/turtle schedule 01:00-07:00 weekdays` has Transmission switch turtle mode on and off by itself; give the days as `weekdays`, `weekends`, or names such as `mon,wed,fri`, and `/turtle schedule off` to stop.
 
 ### Notifications
 
@@ -362,6 +367,15 @@ The image runs as user `1000:1000`, so a directory mounted at `/config` must be 
 Please report vulnerabilities according to [SECURITY.md](SECURITY.md), not in a public issue.
 
 ---
+
+## Upgrading to 2.2.1
+
+- **Windows service**: from an elevated prompt, run the new version's `transmission-telegram -install -config "%AppData%\transmission-telegram\transmission-telegram.conf"`. The service then runs a copy of the program in `%ProgramData%\transmission-telegram`, which only administrators can change, and its settings, state, and logs move there; delete the old config file, which holds the bot token. In 2.2.0, any program running as you could change the program and settings that the service, running as LocalSystem, used.
+- **Groups that become supergroups**: Telegram makes the supergroup a new chat. The bot now moves the group's notifications, digest, and sort order to it, rather than trying the old chat for a day and holding up other chats' notifications; send `/status` there again for a status message.
+- **Replies with buttons** are always one message, with long names cut, so that page buttons and `/deldata`'s question work however long the names.
+- **`/turtle limits 0`** is refused, as `/limit 0` is: a limit of 0 stalls every transfer while turtle mode is on.
+- **`/reannounce` with IDs** names the torrents it asked about, and the IDs that name none.
+- **A bot token with characters a token never has** stops the bot at start, rather than having it retry with the token in its log.
 
 ## Upgrading from 2.1
 

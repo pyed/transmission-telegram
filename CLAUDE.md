@@ -21,16 +21,17 @@ named `transmission-telegram`.
 | `main.go` | Entry point: `run` does what the config asks: print the version, `-install`/`-uninstall`, or run the bot (logger, Transmission client, bot, completion watcher); `checkConnections` tries the settings for `-install` |
 | `internal/redact` | `URL` and `Error` keep credentials and query tokens out of logged URLs and request errors |
 | `internal/config` | Flags, the config file (`-config`, `file.go`) and the environment (`ParseFlags`: flags win over the file, the file over the environment); `Settings`, which `-install` saves; `MasterSlice` (authorized users); `Version` |
-| `internal/service` | `-install`/`-uninstall`: a systemd unit (Linux), launchd job (macOS), or Windows service that runs `-config FILE`; `Run` runs the bot under the Windows service manager. Tests use a fake `host` rooted in a temporary directory |
-| `internal/bot/bot.go` | `Bot`, `New` (startup calls to Telegram, retried), `request`, `reply`, update dispatch (`dispatch`, `serveChat`, `handleUpdate`), panic recovery, `SendHTML`/`OpenButton` for the watcher |
+| `internal/service` | `-install`/`-uninstall`: a systemd unit (Linux), launchd job (macOS), or Windows service that runs `-config FILE`; `Run` runs the bot under the Windows service manager. As root for an account (sudo), files in its home are written through `os.Root` (`writeAccountFile`), never following links out. The Windows service, as LocalSystem, runs a copy of the program in `%ProgramData%\transmission-telegram`, owned by the administrators and private to them and the system (`secureServiceDir`), with its settings, state, and logs. Tests use a fake `host` rooted in a temporary directory |
+| `internal/bot/bot.go` | `Bot`, `New` (startup calls to Telegram, retried, errors with the token masked by `hideToken`), `request`, `reply`, update dispatch (`dispatch`, `serveChat`, `handleUpdate`), panic recovery, `Background` (main's watcher), `SendHTML`/`OpenButton` for the watcher |
 | `internal/bot/buttons.go` | The button router (`handleCallbackQuery`): verbs, v2.x `cmd:` buttons (`legacyPress`), `pressedTorrent`, `editPressed`, `answerCallback` |
 | `internal/bot/card.go` | The torrent card: `cardFields`, `cardKeyboard`, actions (`a:`), removal (`y:`/`n:`), `sendCard`, `torrentFingerprint` |
-| `internal/bot/screens.go` | Paged lists: `listing`, `listPage`, `replyList`, and the `screenStore` of the last 500 list and question messages (`pg:`, `back`) |
+| `internal/bot/screens.go` | Paged lists: `listing`, `listPage`, `replyList`, `fitNames`/`shorten`, and the `screenStore` of the last 500 list and question messages (`pg:`, `back`) |
 | `internal/bot/files.go` | `/files` and its buttons (`fl:`, `fo:`, `fs:`, `fa:`, `c:`) |
 | `internal/bot/status.go`, `digest.go` | `/status` (a pinned message updated every minute; `sr` button) and `/digest` (a summary every day, week, or month, its traffic from Transmission's cumulative statistics); both are saved in the state and run in the background from `Start` |
 | `internal/bot/labels.go`, `queue.go`, `turtle.go` | `/labels` and `/setlabel` (RPC 16, Transmission 3.00), `/queue` and `/port`, `/turtle` with its schedule and limits |
 | `internal/bot/commands.go` | `commandTable`: every command's name, aliases, arguments and help; dispatch, `/help` and the Telegram menu are generated from it |
-| `internal/bot/telegram.go` | Sending: HTML helpers (`esc`, `plainText`), UTF-16 lengths, chunking between lines, the `.txt` fallback, `retryTelegram`, `edit` |
+| `internal/bot/telegram.go` | Sending: HTML helpers (`esc`, `plainText`), UTF-16 lengths, chunking between lines, `fitMessage`, the `.txt` fallback, `retryTelegram`, `edit`; `sendIn` returns the chat a message went to |
+| `internal/bot/migrate.go` | A group that became a supergroup: `followMigration` moves what the bot remembers (`state.Data.MoveChat`) to the new chat, which sending then uses |
 | `internal/bot/format.go` | How torrents look: `torrentLine` (lists), `torrentBlock` (head, tail, active), `torrentCard` (info), icons, sizes, rates |
 | `internal/bot/lists.go`, `info.go`, `session.go`, `settings.go`, `actions.go` | Commands by what they do |
 | `internal/bot/live.go` | Live edits of the head, tail, active, speed and info replies |
@@ -95,7 +96,14 @@ linuxserver's Transmission 4.0.6 and 4.1.3 images, pinned by digest.
   `dd:` (the `/deldata` question) need the message in the `screenStore`, in
   memory, and say they are too old when it is gone. Removing data always asks
   first. A press ends the pressed card's live view (`stopLive`, which waits for
-  an edit under way). The `cmd:` buttons of v2.x cards still work.
+  an edit under way). The `cmd:` buttons of v2.x cards still work. Answers
+  are cut to Telegram's 200 characters.
+- A message with buttons is always one message (`send` cuts it with
+  `fitMessage`, and `edit` cuts every edit): a reply in parts cannot be
+  edited. Lists, files, and `/deldata`'s question cut long names with
+  `fitNames` first, so that every entry shows.
+- Messages and edits to a group that became a supergroup follow it
+  (`migrate.go`); code that saves a chat ID after sending uses `sendIn`'s.
 - List commands make a `listing` in `b.listing`, which page buttons run again,
   so pages show fresh data; add a new list there and in `TestEveryListCommandHasPages`.
 - Updates go through `dispatch`: the library hands them over one at a time
@@ -104,7 +112,8 @@ linuxserver's Transmission 4.0.6 and 4.1.3 images, pinned by digest.
   side by side. Shared state needs a lock. Background work goes through
   `b.launch`, which recovers panics and is counted in `b.wg` for shutdown;
   never block a chat's goroutine for long (live views run in the background
-  through `startLive`, one per chat).
+  through `startLive`, one per chat). `main` starts the watcher through
+  `b.Background`, and the watcher recovers a panic in a check.
 - Anything the bot must remember across restarts is a field of `state.Data`;
   change it with `Store.Update`, and only when it changed (every update writes
   and syncs the file). A save that fails keeps the change in memory and is
@@ -168,6 +177,9 @@ linuxserver's Transmission 4.0.6 and 4.1.3 images, pinned by digest.
 - go-telegram/bot runs every update's handler in its own goroutine unless
   `WithNotAsyncHandlers` is set.
 - A private chat's ID is the user's ID.
+- A group upgraded to a supergroup becomes a new chat: requests to the old ID
+  fail with 400 and `migrate_to_chat_id`, which go-telegram/bot returns as
+  `*MigrateError`.
 
 ## Git and releases
 
@@ -177,14 +189,16 @@ linuxserver's Transmission 4.0.6 and 4.1.3 images, pinned by digest.
   `feat:`, `build:`, `ci:`, `docs:`, `refactor:`, `test:`), then a body that
   explains the problem and the change. End with the `Co-Authored-By` trailer the
   system provides.
-- Pushing a `v*` tag runs `.github/workflows/release.yml`: it verifies the
-  commit, builds archives for 11 platforms with checksums, publishes a GitHub
-  release whose notes are the annotated tag's message after its first line
-  (then GitHub's list of merged pull requests), and then pushes a
-  five-platform image to
+- Pushing a `v*` tag runs `.github/workflows/release.yml`: it runs all of CI
+  (`ci.yml`, through `workflow_call`; CI's own `push` trigger is for branches
+  only), builds archives for 11 platforms with checksums, attests their build
+  provenance, publishes a GitHub release whose notes are the annotated tag's
+  message after its first line (then GitHub's list of merged pull requests),
+  and then pushes a five-platform image, also attested, to
   `ghcr.io/pyed/transmission-telegram` (tags `X.Y.Z`, `X.Y`, `vX.Y.Z`,
-  `latest`). CI builds the same five platforms on every push. Never re-create a
-  pushed tag; bump the patch version instead.
+  `latest`). A tag with a `-`, such as `v2.3.0-rc.1`, is a pre-release. CI
+  builds the same five platforms on every push. Never re-create a pushed tag;
+  bump the patch version instead.
 - Go versions: `go.mod` says `go 1.26.0` with `toolchain go1.26.10`; CI tests
   Go 1.26.10 and 1.27.3, and releases and the Docker build use 1.27.3. When
   govulncheck reports a fixed standard-library vulnerability, move the

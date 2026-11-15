@@ -20,3 +20,6 @@ bin/
 .vscode/
 *.swp
 *.swo
+
+# Local notes on work in progress (see CLAUDE.md); never committed
+HANDOFF.md
