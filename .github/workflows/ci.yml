@@ -2,6 +2,9 @@ name: CI
 
 on:
   push:
+    # A pushed tag runs it through the release workflow, which publishes
+    # nothing until it passes.
+    branches: [ '**' ]
   pull_request:
     branches: [ master, main, dev ]
   schedule:
@@ -9,6 +12,7 @@ on:
     # surface even when nothing is pushed.
     - cron: '23 5 * * 1'
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
