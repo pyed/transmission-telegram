@@ -145,6 +145,11 @@ func (b *Bot) editLiveMessage(ctx context.Context, chatID int64, msgID int, text
 // not, the text ends saying how many were left out, so that a live view is
 // always one message it can edit.
 func fitBlocks(blocks []string, sep string) string {
+	return fitBlocksIn(blocks, sep, maxMessageLength)
+}
+
+// fitBlocksIn is fitBlocks within limit, as renderedLength measures.
+func fitBlocksIn(blocks []string, sep string, limit int) string {
 	sepLength := renderedLength(sep)
 	length := 0
 	for i, block := range blocks {
@@ -157,7 +162,7 @@ func fitBlocks(blocks []string, sep string) string {
 		if rest := len(blocks) - i - 1; rest > 0 {
 			reserve = sepLength + telegramLength(moreNote(rest))
 		}
-		if length+added+reserve > maxMessageLength {
+		if length+added+reserve > limit {
 			if i == 0 {
 				return moreNote(len(blocks))
 			}

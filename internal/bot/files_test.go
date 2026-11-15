@@ -125,3 +125,28 @@ func TestFilesBeforeMetadata(t *testing.T) {
 		t.Fatalf("files before metadata = %q, %v", text, buttonData(keyboard))
 	}
 }
+
+// A page of files with long names, and a file's own screen, are one message
+// each, which their buttons can edit.
+func TestFilePagesWithLongNamesAreOneMessage(t *testing.T) {
+	b, ft, fts := filesBot(t)
+	for i := range fts.torrents[0].Files {
+		fts.torrents[0].Files[i].Name = fmt.Sprintf("Show/%02d %s.mkv", i+1, strings.Repeat("<long>", 1000))
+	}
+	ctx := context.Background()
+	b.handleUpdate(ctx, nil, message("/files 7"))
+	if texts := ft.sentTexts(); len(texts) != 1 || renderedLength(texts[0]) > maxMessageLength || !strings.Contains(texts[0], "<b>10</b>") {
+		t.Fatalf("/files sent %d messages", len(texts))
+	}
+	b.handleCallbackQuery(ctx, pressOn(1, "fl:7:"+fp+":1"))
+	b.handleCallbackQuery(ctx, pressOn(1, "fo:7:"+fp+":11"))
+	edits := ft.editsOf("1")
+	if len(edits) != 2 || !strings.Contains(edits[0], "<b>12</b>") || !strings.Contains(edits[1], "File 12 of 12: <code>Show/12 ") {
+		t.Fatalf("edits = %q", edits)
+	}
+	for _, edit := range edits {
+		if renderedLength(edit) > maxMessageLength || !strings.Contains(edit, "…") {
+			t.Fatalf("an edit was not cut to fit: %d long", renderedLength(edit))
+		}
+	}
+}

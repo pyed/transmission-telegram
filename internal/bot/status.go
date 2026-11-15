@@ -58,7 +58,7 @@ func (b *Bot) status(ctx context.Context, r *request) {
 	b.statusMu.Lock()
 	defer b.statusMu.Unlock()
 	b.stopStatusLocked(ctx, r.chatID, "📊 This status moved to a newer message.")
-	messageID, err := b.send(ctx, r.chatID, b.renderStatus(ctx), statusKeyboard())
+	messageID, chatID, err := b.sendIn(ctx, r.chatID, b.renderStatus(ctx), statusKeyboard())
 	if err != nil || messageID == 0 {
 		return
 	}
@@ -66,16 +66,16 @@ func (b *Bot) status(ctx context.Context, r *request) {
 		if data.Status == nil {
 			data.Status = make(map[int64]int)
 		}
-		data.Status[r.chatID] = messageID
+		data.Status[chatID] = messageID
 	}); err != nil {
 		b.Logger.Warn("Could not save the status message; it stays up to date until the bot stops", "error", err)
 	}
 	err = b.retryTelegram(ctx, func() error {
-		_, err := b.API.PinChatMessage(ctx, &tgbot.PinChatMessageParams{ChatID: r.chatID, MessageID: messageID, DisableNotification: true})
+		_, err := b.API.PinChatMessage(ctx, &tgbot.PinChatMessageParams{ChatID: chatID, MessageID: messageID, DisableNotification: true})
 		return err
 	})
 	if err != nil {
-		b.reply(ctx, r, "<b>status:</b> it stays up to date, but could not be pinned: "+esc(redact.Error(err))+
+		b.reply(ctx, &request{chatID: chatID}, "<b>status:</b> it stays up to date, but could not be pinned: "+esc(redact.Error(err))+
 			". In a group, the bot needs the right to pin messages.")
 	}
 }

@@ -421,3 +421,21 @@ func TestDownloadTelegramFile(t *testing.T) {
 		}
 	})
 }
+
+// /reannounce names the torrents it asked the trackers about, and the IDs
+// that name none, rather than counting every number as done.
+func TestReannounceNamesTheTorrents(t *testing.T) {
+	b, ft, fts := buttonBot(t)
+	b.handleUpdate(context.Background(), nil, message("/reannounce 7 999 x"))
+	if bodies := fts.requestBodies("torrent-reannounce"); len(bodies) != 1 || !strings.Contains(bodies[0], `"ids":[7]`) {
+		t.Fatalf("torrent-reannounce requests = %q", bodies)
+	}
+	want := "<b>📡 Asked the trackers for peers:</b>\n<code>7</code> Test &lt;Torrent&gt;\n⚠️ x is not a torrent ID\n⚠️ No torrent has the ID 999"
+	if texts := ft.sentTexts(); len(texts) != 1 || texts[0] != want {
+		t.Fatalf("replies = %q", texts)
+	}
+	b.handleUpdate(context.Background(), nil, message("/reannounce 999"))
+	if got := fts.methodCount("torrent-reannounce"); got != 1 {
+		t.Fatalf("asked Transmission to reannounce a torrent it does not have (%d requests)", got)
+	}
+}

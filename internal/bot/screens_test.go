@@ -163,3 +163,49 @@ func mustListing(t *testing.T, b *Bot, command string, args ...string) listing {
 	}
 	return l
 }
+
+// A page of torrents with long names is one message, every torrent on it
+// shown with its name cut, so that its page buttons work: a page in two
+// messages cannot be edited, and its buttons said the list was too old.
+func TestListPagesWithLongNamesAreOneMessage(t *testing.T) {
+	b, ft := listBot(t, 0)
+	fts := newFakeTransmission(t)
+	for id := 1; id <= 25; id++ {
+		fts.torrents = append(fts.torrents, &transmission.Torrent{
+			ID: id, Name: fmt.Sprintf("%02d %s", id, strings.Repeat("<n>", 200)), HashString: fmt.Sprintf("%040x", id),
+			Status: transmission.StatusSeeding, PercentDone: 1,
+		})
+	}
+	client, err := transmission.New(fts.URL+"/transmission/rpc", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Client = client
+	ctx := context.Background()
+	b.handleUpdate(ctx, nil, message("/list"))
+	texts := ft.sentTexts()
+	if len(texts) != 1 || renderedLength(texts[0]) > maxMessageLength || strings.Count(texts[0], "…") != 10 ||
+		!strings.Contains(texts[0], "<code>10</code>") || !strings.Contains(texts[0], "Page 1 of 3") {
+		t.Fatalf("/list sent %d messages:\n%s", len(texts), strings.Join(texts, "\n---\n"))
+	}
+	b.handleCallbackQuery(ctx, pressOn(1, "pg:1"))
+	if edits := ft.editsOf("1"); len(edits) != 1 || !strings.Contains(edits[0], "<code>20</code>") || !strings.Contains(edits[0], "Page 2 of 3") {
+		t.Fatalf("the next page: edits %q, answers %q", edits, ft.callbackAnswers())
+	}
+}
+
+// A screen forgotten and then put again under the same message lasts as
+// long as any other.
+func TestScreensPutAgainAfterBeingForgottenLast(t *testing.T) {
+	var s screenStore
+	key := screenKey{42, 1}
+	s.put(key, &screen{command: "deldata"})
+	s.forget(key)
+	s.put(key, &screen{command: "list"})
+	for i := range maxScreens - 1 {
+		s.put(screenKey{42, 100 + i}, &screen{command: "list"})
+	}
+	if _, ok := s.get(key); !ok || len(s.screens) != maxScreens || len(s.order) != maxScreens {
+		t.Fatalf("remembered %v, %d screens, order of %d", ok, len(s.screens), len(s.order))
+	}
+}

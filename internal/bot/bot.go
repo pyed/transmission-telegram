@@ -135,7 +135,7 @@ func New(ctx context.Context, cfg *config.Config, client *transmission.Transmiss
 		tgbot.WithMiddlewares(b.recoverMiddleware),
 		tgbot.WithAllowedUpdates(tgbot.AllowedUpdates{models.AllowedUpdateMessage, models.AllowedUpdateCallbackQuery}),
 		tgbot.WithErrorsHandler(func(err error) {
-			logger.Error("Telegram API error", "error", err)
+			logger.Error("Telegram API error", "error", hideToken(err, cfg.BotToken))
 		}),
 		// GetMe is called below, once, so its answer can be kept.
 		tgbot.WithSkipGetMe(),
@@ -147,7 +147,10 @@ func New(ctx context.Context, cfg *config.Config, client *transmission.Transmiss
 	}
 	b.API = api
 
-	me, err := retryStartup(ctx, logger, "getMe", api.GetMe)
+	me, err := retryStartup(ctx, logger, "getMe", func(ctx context.Context) (*models.User, error) {
+		me, err := api.GetMe(ctx)
+		return me, hideToken(err, cfg.BotToken)
+	})
 	if permanentStartupError(err) {
 		return nil, fmt.Errorf("telegram refused the bot token; check -token or TT_BOT_TOKEN with @BotFather: %w", err)
 	}
@@ -158,7 +161,7 @@ func New(ctx context.Context, cfg *config.Config, client *transmission.Transmiss
 	logger.Info("Telegram bot authorized", "username", me.Username)
 
 	if _, err := retryStartup(ctx, logger, "clear webhook", func(ctx context.Context) (struct{}, error) {
-		return struct{}{}, clearWebhook(ctx, api)
+		return struct{}{}, hideToken(clearWebhook(ctx, api), cfg.BotToken)
 	}); err != nil {
 		return nil, err
 	}
@@ -166,6 +169,24 @@ func New(ctx context.Context, cfg *config.Config, client *transmission.Transmiss
 	b.registerMenu(ctx)
 	return b, nil
 }
+
+// hideToken returns err with the bot token masked wherever its text shows
+// it. The Telegram library masks the token in most of its errors, but not
+// in one for a request it could not make, whose URL holds the token.
+func hideToken(err error, token string) error {
+	if err == nil || token == "" || !strings.Contains(err.Error(), token) {
+		return err
+	}
+	return tokenHiddenError{err: err, token: token}
+}
+
+type tokenHiddenError struct {
+	err   error
+	token string
+}
+
+func (e tokenHiddenError) Error() string { return strings.ReplaceAll(e.err.Error(), e.token, "***") }
+func (e tokenHiddenError) Unwrap() error { return e.err }
 
 // startupDelay is how long New waits after its n-th failed call to Telegram,
 // counting from 0: a second, doubling up to a minute. Tests shorten it.
@@ -309,6 +330,13 @@ func updateOrigin(update *models.Update) (int64, *models.User) {
 		return from.ID, from
 	}
 	return 0, nil
+}
+
+// Background runs fn in the background, as the bot runs its own background
+// work: a panic in fn is logged rather than ending the program, and Start
+// waits for fn to return before it does.
+func (b *Bot) Background(ctx context.Context, operation string, fn func(context.Context)) {
+	b.launch(ctx, operation, fn)
 }
 
 // launch runs fn in the background; Start waits for it at shutdown. A

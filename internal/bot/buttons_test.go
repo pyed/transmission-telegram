@@ -2,6 +2,9 @@ package bot
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -257,5 +260,59 @@ func TestPressingALiveCardEndsItsLiveView(t *testing.T) {
 	edits := ft.editsOf("1")
 	if len(edits) != question || !strings.Contains(edits[len(edits)-1], "Remove this torrent?") {
 		t.Fatalf("the live view went on after the press: %d edits, last %q", len(edits), edits[len(edits)-1])
+	}
+}
+
+// An answer longer than Telegram's 200 characters, as an error with the
+// page of a proxy in front of Transmission is, is cut to fit.
+func TestLongPressAnswersAreCut(t *testing.T) {
+	ft := newFakeTelegram(t)
+	page := "<html>\r\n<head><title>502 Bad Gateway</title></head>\r\n<body>\r\n<center><h1>502 Bad Gateway</h1></center>\r\n" +
+		"<hr><center>nginx/1.24.0</center>\r\n</body>\r\n</html>\r\n"
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(page))
+	}))
+	t.Cleanup(proxy.Close)
+	client, _ := transmission.New(proxy.URL+"/transmission/rpc", "", "")
+	b := newTestBot(t, ft.newBot(t), client)
+	b.Config.Masters = config.MasterSlice{"12345"}
+	b.handleCallbackQuery(context.Background(), pressFrom(12345, "a:stop:7:"+testHash[:16]))
+	answers := ft.callbackAnswers()
+	if len(answers) != 1 || telegramLength(answers[0]) > maxCallbackAnswer ||
+		!strings.HasPrefix(answers[0], "Transmission failed: transmission RPC error (HTTP 502)") || !strings.HasSuffix(answers[0], "…") {
+		t.Fatalf("answers = %q", answers)
+	}
+}
+
+// /deldata's question for many torrents with long names is one message,
+// with every torrent named, so that its Yes button works; with more than
+// fit, it says how many it leaves out, and Yes deletes them all.
+func TestDeldataQuestionIsOneMessage(t *testing.T) {
+	for _, n := range []int{30, 400} {
+		b, ft, fts := buttonBot(t)
+		fts.torrents = nil
+		command := "/deldata"
+		for id := 1; id <= n; id++ {
+			fts.torrents = append(fts.torrents, &transmission.Torrent{ID: id, Name: fmt.Sprintf("%03d-%s", id, strings.Repeat("n", 180)), HashString: fmt.Sprintf("%040x", id)})
+			command += fmt.Sprintf(" %d", id)
+		}
+		ctx := context.Background()
+		b.handleUpdate(ctx, nil, message(command))
+		texts := ft.sentTexts()
+		if len(texts) != 1 || renderedLength(texts[0]) > maxMessageLength {
+			t.Fatalf("%d torrents: the question took %d messages", n, len(texts))
+		}
+		if n == 30 && (!strings.Contains(texts[0], "<code>30</code> 030-") || strings.Contains(texts[0], "more")) {
+			t.Fatalf("%d torrents: the question does not name them all:\n%s", n, texts[0])
+		}
+		if n == 400 && !strings.Contains(texts[0], " more") {
+			t.Fatalf("%d torrents: the question does not say how many it leaves out:\n%s", n, texts[0])
+		}
+		b.handleCallbackQuery(ctx, pressOn(1, "dd:yes"))
+		bodies := fts.requestBodies("torrent-remove")
+		if len(bodies) != 1 || !strings.Contains(bodies[0], fmt.Sprintf(",%d],", n)) {
+			t.Fatalf("%d torrents: torrent-remove requests %q, answers %q", n, bodies, ft.callbackAnswers())
+		}
 	}
 }
