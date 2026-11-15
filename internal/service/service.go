@@ -10,7 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"os/user"
@@ -19,6 +21,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pyed/transmission-telegram/v2/internal/config"
 )
@@ -54,8 +57,17 @@ type host struct {
 	command func(name string, args ...string) error
 	// check tries the settings before anything is installed.
 	check func(ctx context.Context) error
-	// On Windows, these install and remove the service.
-	installWindows   func(exe string, args []string) error
+	// programData is Windows' folder for programs' data, which holds the
+	// service's own folder; empty elsewhere.
+	programData string
+	// secureDir creates the Windows service's folder, or takes over the
+	// one there is, so that only administrators and the system may change
+	// what it holds.
+	secureDir func(dir string) error
+	// On Windows, these install and remove the service: installWindows
+	// copies the program at source to target, and has the service run
+	// target with args.
+	installWindows   func(source, target string, args []string) error
 	uninstallWindows func() error
 }
 
@@ -77,6 +89,8 @@ func newHost(stdout io.Writer) host {
 		stdout:           stdout,
 		uid:              os.Getuid(),
 		command:          runCommand,
+		programData:      programDataDir(),
+		secureDir:        secureServiceDir,
 		installWindows:   installWindowsService,
 		uninstallWindows: uninstallWindowsService,
 	}
@@ -167,14 +181,30 @@ func (h host) install(ctx context.Context, cfg *config.Config) error {
 	if h.account.configDir == "" {
 		return errors.New("-install: cannot find the user's config directory")
 	}
+	if h.goos == "windows" && h.programData == "" {
+		return errors.New("-install: cannot find Windows' ProgramData folder")
+	}
 
-	dir := filepath.Join(h.account.configDir, "transmission-telegram")
+	dir := h.settingsDir()
 	configPath, err := filepath.Abs(cmp.Or(cfg.ConfigFile, filepath.Join(dir, configName)))
 	if err != nil {
 		return err
 	}
 	settings := maps.Clone(cfg.Settings)
 	rewrite := cfg.RewriteConfig
+	// The Windows service runs as LocalSystem, so what it runs and reads
+	// is kept where only administrators may change it: in its own folder,
+	// whatever -config said. A user's own files there could be changed by
+	// any program of theirs, which would then run as LocalSystem.
+	earlierState := filepath.Join(h.account.configDir, "transmission-telegram", "state.json")
+	if h.goos == "windows" {
+		if !samePath(configPath, filepath.Join(dir, configName)) {
+			configPath, rewrite = filepath.Join(dir, configName), true
+		}
+		if samePath(settings["state"], earlierState) {
+			settings["state"] = "" // where 2.2.0 kept it, which moves too
+		}
+	}
 	if settings["state"] == "" {
 		// The service may run with another home directory, or none, so it
 		// is told where what the bot remembers is kept.
@@ -188,8 +218,14 @@ func (h host) install(ctx context.Context, cfg *config.Config) error {
 	if err := h.check(ctx); err != nil {
 		return err
 	}
+	if h.goos == "windows" {
+		if err := h.secureDir(dir); err != nil {
+			return fmt.Errorf("-install: %w", err)
+		}
+		h.moveEarlierState(earlierState, settings["state"])
+	}
 	if _, statErr := os.Stat(configPath); rewrite || statErr != nil {
-		if err := writePrivateFile(configPath, text, h.account.uid, h.account.gid); err != nil {
+		if err := writeAccountFile(configPath, text, h.account); err != nil {
 			return fmt.Errorf("save the settings: %w", err)
 		}
 		h.printf("Saved the settings to %s", configPath)
@@ -201,15 +237,25 @@ func (h host) install(ctx context.Context, cfg *config.Config) error {
 	case "darwin":
 		err = h.installLaunchd(configPath)
 	default:
-		if err := h.installWindows(h.executable, []string{"-config", configPath}); err != nil {
+		exe := filepath.Join(dir, Name+".exe")
+		if err := h.installWindows(h.executable, exe, []string{"-config", configPath}); err != nil {
 			return err
 		}
 		h.printf("Installed and started the %s service, which starts with Windows.", Name)
-		h.printf("Logs: %s", filepath.Join(filepath.Dir(configPath), logName))
-		h.printf("After editing %s, restart it with: Restart-Service %s", configPath, Name)
+		h.printf("It runs as LocalSystem, so only administrators may change its program, settings, and state, in %s.", dir)
+		h.printf("It runs a copy of this program, %s: after upgrading transmission-telegram, run -install again.", exe)
+		h.printf("Logs: %s", filepath.Join(dir, logName))
+		h.printf("After editing %s from an elevated editor, restart it with: Restart-Service %s", configPath, Name)
 		h.printf("Remove it with: transmission-telegram -uninstall")
-		h.printf("Note: it runs as LocalSystem. To run it as your own account, set it under Log On in the " +
-			"service's properties (services.msc), and restart it.")
+		if cfg.ConfigFile != "" && !samePath(cfg.ConfigFile, configPath) {
+			h.printf("Note: the settings were copied from %s, which the service does not read. Delete it, as it holds the bot token.", cfg.ConfigFile)
+		}
+		for _, name := range []string{"state", "logfile"} {
+			if path := settings[name]; path != "" && !withinDir(dir, path) {
+				h.printf("Note: the service writes %s (%s) as LocalSystem, outside %s, where other accounts or programs "+
+					"may be able to change what it writes; keep it in %s.", path, name, dir, dir)
+			}
+		}
 		return nil
 	}
 	if err == nil && h.admin && (h.account.name == "" || h.account.name == "root") {
@@ -226,7 +272,14 @@ func (h host) uninstall() error {
 	case "darwin":
 		err = h.uninstallLaunchd()
 	case "windows":
-		err = h.uninstallWindows()
+		if err = h.uninstallWindows(); err == nil {
+			// The copy of the program the service ran; this program, when
+			// it is that copy, cannot remove itself.
+			exe := filepath.Join(h.settingsDir(), Name+".exe")
+			if removeErr := os.Remove(exe); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				h.printf("Note: could not remove %s: %v", exe, removeErr)
+			}
+		}
 	default:
 		err = fmt.Errorf("-uninstall does not support %s", h.goos)
 	}
@@ -234,8 +287,92 @@ func (h host) uninstall() error {
 		return err
 	}
 	h.printf("Removed the %s service. The settings in %s were kept; delete them if they are no longer needed.",
-		Name, filepath.Join(h.account.configDir, "transmission-telegram"))
+		Name, h.settingsDir())
 	return nil
+}
+
+// settingsDir is where -install keeps the settings, and the state unless
+// told otherwise: the user's config directory, or on Windows, the service's
+// own folder in ProgramData.
+func (h host) settingsDir() string {
+	if h.goos == "windows" {
+		return filepath.Join(h.programData, "transmission-telegram")
+	}
+	return filepath.Join(h.account.configDir, "transmission-telegram")
+}
+
+// moveEarlierState copies the state 2.2.0's Windows service kept in the
+// user's config directory, from earlier, to its new place, to, unless
+// there is a state there already.
+func (h host) moveEarlierState(earlier, to string) {
+	if samePath(earlier, to) {
+		return
+	}
+	if _, err := os.Stat(to); !errors.Is(err, os.ErrNotExist) {
+		return
+	}
+	content, err := os.ReadFile(earlier)
+	if err != nil {
+		return // nothing to move
+	}
+	if err := writePrivateFile(to, string(content), -1, -1); err != nil {
+		h.printf("Note: could not copy the state from %s to %s: %v", earlier, to, err)
+		return
+	}
+	h.printf("Copied the state from %s to %s.", earlier, to)
+}
+
+// samePath reports whether a and b name the same path, ignoring case, as
+// Windows does.
+func samePath(a, b string) bool {
+	return a != "" && b != "" && strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
+}
+
+// withinDir reports whether path is dir or inside it, ignoring case.
+func withinDir(dir, path string) bool {
+	rel, err := filepath.Rel(strings.ToLower(filepath.Clean(dir)), strings.ToLower(filepath.Clean(path)))
+	return err == nil && filepath.IsLocal(rel)
+}
+
+// copyExecutable copies the program at source to target, replacing it,
+// unless they are the same file.
+func copyExecutable(source, target string) error {
+	if sourceInfo, err := os.Stat(source); err != nil {
+		return err
+	} else if targetInfo, err := os.Stat(target); err == nil && os.SameFile(sourceInfo, targetInfo) {
+		return nil
+	}
+	in, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	temp, err := os.CreateTemp(filepath.Dir(target), ".transmission-telegram-*.exe")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(temp.Name()) // a no-op once renamed
+	_, err = io.Copy(temp, in)
+	if err == nil {
+		err = temp.Chmod(0o755)
+	}
+	if err == nil {
+		err = temp.Sync()
+	}
+	if closeErr := temp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	// A service that has just stopped may hold its program open a moment.
+	for attempt := 1; ; attempt++ {
+		err = os.Rename(temp.Name(), target)
+		if err == nil || attempt == 20 {
+			return err
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
 }
 
 // configText renders settings as a config file.
@@ -253,6 +390,58 @@ func configText(settings map[string]string) (string, error) {
 	return text.String(), nil
 }
 
+// writeAccountFile replaces the file at path with content readable only by
+// its owner, the account's. When -install runs as root for an account, as
+// through sudo, a file in the account's home directory is written through a
+// handle on that directory that no symbolic link can lead out of: the
+// account may change its own directory as it is written, and a link could
+// otherwise have root write, or give the account, a file anywhere.
+func writeAccountFile(path, content string, account account) error {
+	if account.uid != -1 && account.home != "" {
+		if rel, err := filepath.Rel(account.home, path); err == nil && filepath.IsLocal(rel) {
+			if err := writeWithin(account.home, rel, content, account.uid, account.gid); err != nil {
+				return fmt.Errorf("%w (without following links out of %s)", err, account.home)
+			}
+			return nil
+		}
+	}
+	return writePrivateFile(path, content, account.uid, account.gid)
+}
+
+// writeWithin replaces the file rel, inside home, with content readable
+// only by uid, creating its missing directories, for uid and gid, without
+// leaving home.
+func writeWithin(home, rel, content string, uid, gid int) error {
+	root, err := os.OpenRoot(home)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	dir := filepath.Dir(rel)
+	if dir != "." {
+		made := ""
+		for _, part := range strings.Split(dir, string(filepath.Separator)) {
+			made = filepath.Join(made, part)
+			err := root.Mkdir(made, 0o700)
+			switch {
+			case err == nil:
+				if err := root.Lchown(made, uid, gid); err != nil {
+					return err
+				}
+			case !errors.Is(err, fs.ErrExist):
+				return err
+			}
+		}
+	}
+	temp := filepath.Join(dir, fmt.Sprintf(".transmission-telegram-%d", rand.Uint64()))
+	file, err := root.OpenFile(temp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	defer root.Remove(temp) // a no-op once renamed
+	return finishPrivateFile(file, content, uid, gid, func() error { return root.Rename(temp, rel) })
+}
+
 // writePrivateFile replaces the file at path with content readable only by
 // its owner, creating its directory if needed. When uid is not -1, the file
 // and the directories it creates are given to uid and gid.
@@ -266,27 +455,36 @@ func writePrivateFile(path, content string, uid, gid int) error {
 		return err
 	}
 	defer os.Remove(temp.Name()) // a no-op once renamed
-	_, err = temp.WriteString(content)
+	return finishPrivateFile(temp, content, uid, gid, func() error { return os.Rename(temp.Name(), path) })
+}
+
+// finishPrivateFile writes content to a new file, makes it private, and
+// gives it to uid and gid unless uid is -1, all through the open file
+// rather than its name, which could come to name another file meanwhile;
+// then it closes the file and puts it in place with rename.
+func finishPrivateFile(file *os.File, content string, uid, gid int, rename func() error) error {
+	_, err := file.WriteString(content)
 	if err == nil {
-		err = temp.Sync()
+		err = file.Chmod(0o600)
 	}
-	if closeErr := temp.Close(); err == nil {
+	if err == nil && uid != -1 {
+		err = file.Chown(uid, gid)
+	}
+	if err == nil {
+		err = file.Sync()
+	}
+	if closeErr := file.Close(); err == nil {
 		err = closeErr
 	}
 	if err == nil {
-		err = os.Chmod(temp.Name(), 0o600)
-	}
-	if err == nil && uid != -1 {
-		err = os.Chown(temp.Name(), uid, gid)
-	}
-	if err == nil {
-		err = os.Rename(temp.Name(), path)
+		err = rename()
 	}
 	return err
 }
 
 // mkdirOwned creates dir and its missing parents, giving the ones it creates
-// to uid and gid unless uid is -1.
+// to uid and gid unless uid is -1. A directory replaced by a link as it is
+// made is not followed: the link is given instead.
 func mkdirOwned(dir string, uid, gid int) error {
 	if info, err := os.Stat(dir); err == nil {
 		if !info.IsDir() {
@@ -305,7 +503,7 @@ func mkdirOwned(dir string, uid, gid int) error {
 		return err
 	}
 	if uid != -1 {
-		return os.Chown(dir, uid, gid)
+		return os.Lchown(dir, uid, gid)
 	}
 	return nil
 }

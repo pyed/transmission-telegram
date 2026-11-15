@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
@@ -25,7 +26,11 @@ func isAdmin() bool {
 	return windows.GetCurrentProcessToken().IsElevated()
 }
 
-func installWindowsService(exe string, args []string) error {
+// installWindowsService copies the program at source to target, in the
+// service's folder, and has the service run target with args: it creates
+// the service, or points the one there is at target. The service is stopped
+// first, since a running program cannot be replaced.
+func installWindowsService(source, target string, args []string) error {
 	if !isAdmin() {
 		return errors.New("installing a Windows service needs an administrator: run transmission-telegram -install from an elevated prompt")
 	}
@@ -36,17 +41,23 @@ func installWindowsService(exe string, args []string) error {
 	defer manager.Disconnect()
 
 	service, err := manager.OpenService(Name)
-	if err == nil {
-		// Reinstalling points the existing service at the new settings.
+	exists := err == nil
+	if exists {
 		defer service.Close()
 		if err := stopWindowsService(service); err != nil {
 			return err
 		}
+	}
+	if err := copyExecutable(source, target); err != nil {
+		return fmt.Errorf("copy the program to %s: %w", target, err)
+	}
+	if exists {
+		// Reinstalling points the existing service at the new settings.
 		config, err := service.Config()
 		if err != nil {
 			return err
 		}
-		config.BinaryPathName = syscall.EscapeArg(exe)
+		config.BinaryPathName = syscall.EscapeArg(target)
 		for _, arg := range args {
 			config.BinaryPathName += " " + syscall.EscapeArg(arg)
 		}
@@ -55,7 +66,7 @@ func installWindowsService(exe string, args []string) error {
 			return fmt.Errorf("update the %s service: %w", Name, err)
 		}
 	} else {
-		service, err = manager.CreateService(Name, exe, mgr.Config{
+		service, err = manager.CreateService(Name, target, mgr.Config{
 			DisplayName:      "transmission-telegram",
 			Description:      "Telegram bot for Transmission",
 			StartType:        mgr.StartAutomatic,
@@ -75,6 +86,77 @@ func installWindowsService(exe string, args []string) error {
 		return err
 	}
 	return service.Start()
+}
+
+// serviceDirSecurity lets only the system and administrators into the
+// service's folder and what it holds, and makes the administrators its
+// owner: ProgramData lets every user create and change files in the
+// folders they make there.
+const serviceDirSecurity = "O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+
+// secureServiceDir creates the service's folder, private to the system and
+// administrators from the start. A folder already there must belong to the
+// administrators or the system, as one this program made does: another
+// user's could hold files of theirs that the service would use. Its
+// security is then set afresh.
+func secureServiceDir(dir string) error {
+	sd, err := windows.SecurityDescriptorFromString(serviceDirSecurity)
+	if err != nil {
+		return err
+	}
+	name, err := windows.UTF16PtrFromString(dir)
+	if err != nil {
+		return err
+	}
+	attributes := windows.SecurityAttributes{SecurityDescriptor: sd}
+	attributes.Length = uint32(unsafe.Sizeof(attributes))
+	err = windows.CreateDirectory(name, &attributes)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+		return fmt.Errorf("create %s: %w", dir, err)
+	}
+	current, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		return fmt.Errorf("read who owns %s: %w", dir, err)
+	}
+	owner, _, err := current.Owner()
+	if err != nil {
+		return fmt.Errorf("read who owns %s: %w", dir, err)
+	}
+	if !owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) && !owner.IsWellKnown(windows.WinLocalSystemSid) {
+		who := owner.String()
+		if account, domain, _, err := owner.LookupAccount(""); err == nil {
+			who = domain + `\` + account
+		}
+		return fmt.Errorf("%s belongs to %s rather than to the administrators, so another program may have made it "+
+			"to take over the service; check what it holds, delete it, and run -install again", dir, who)
+	}
+	owner, _, err = sd.Owner()
+	if err != nil {
+		return err
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		return err
+	}
+	if err := windows.SetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		owner, nil, dacl, nil); err != nil {
+		return fmt.Errorf("make %s private to the administrators: %w", dir, err)
+	}
+	return nil
+}
+
+// programDataDir is Windows' ProgramData folder. It is asked of Windows,
+// as the environment variable can be set by the user, for programs that
+// run as them to change.
+func programDataDir() string {
+	if dir, err := windows.KnownFolderPath(windows.FOLDERID_ProgramData, 0); err == nil {
+		return dir
+	}
+	return ""
 }
 
 func uninstallWindowsService() error {

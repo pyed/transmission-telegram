@@ -347,26 +347,156 @@ func TestInstallLaunchd(t *testing.T) {
 	}
 }
 
+// The Windows service runs as LocalSystem, so it runs a copy of the program
+// in a folder of ProgramData only administrators may change, with its
+// settings, state, and logs, whatever -config said; the state 2.2.0 kept in
+// the user's config directory moves there.
 func TestInstallWindowsService(t *testing.T) {
 	ti := newTestInstall(t, "windows", true)
+	ti.host.programData = filepath.Join(ti.host.prefix, "ProgramData")
+	dir := filepath.Join(ti.host.programData, "transmission-telegram")
+	var secured []string
+	ti.host.secureDir = func(dir string) error {
+		secured = append(secured, dir)
+		return os.MkdirAll(dir, 0o700)
+	}
 	var installed []string
-	ti.host.installWindows = func(exe string, args []string) error {
-		installed = append([]string{exe}, args...)
+	ti.host.installWindows = func(source, target string, args []string) error {
+		installed = append([]string{source, target}, args...)
 		return nil
 	}
-	if err := ti.host.install(context.Background(), installConfig(t)); err != nil {
+
+	// 2.2.0 installed with its settings and state in the user's folder.
+	earlier := filepath.Join(ti.host.account.configDir, "transmission-telegram")
+	earlierConfig := filepath.Join(earlier, "transmission-telegram.conf")
+	if err := os.MkdirAll(earlier, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(ti.host.account.configDir, "transmission-telegram")
-	if got := strings.Join(installed, " "); got != "/opt/transmission-telegram/transmission-telegram -config "+filepath.Join(dir, "transmission-telegram.conf") {
-		t.Fatalf("installed %s", got)
+	if err := os.WriteFile(earlierConfig, []byte("token = 123:SECRET\nmaster = 7\nstate = "+filepath.Join(earlier, "state.json")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(ti.out.String(), "Logs: "+filepath.Join(dir, "transmission-telegram.log")) {
+	if err := os.WriteFile(filepath.Join(earlier, "state.json"), []byte(`{"version":1,"lastChat":42}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ti.host.install(context.Background(), parse(t, []string{"-install", "-config", earlierConfig, "-logfile", `C:\Users\alice\bot.log`}, nil)); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(dir, "transmission-telegram.conf")
+	if got, want := strings.Join(installed, " "), "/opt/transmission-telegram/transmission-telegram "+filepath.Join(dir, "transmission-telegram.exe")+
+		" -config "+configPath; got != want {
+		t.Fatalf("installed %s\nwant %s", got, want)
+	}
+	if len(secured) != 1 || secured[0] != dir {
+		t.Fatalf("secured %q", secured)
+	}
+	if settings := readFile(t, configPath); !strings.Contains(settings, "\ntoken = 123:SECRET\n") ||
+		!strings.Contains(settings, "\nstate = "+filepath.Join(dir, "state.json")+"\n") {
+		t.Fatalf("settings:\n%s", settings)
+	}
+	if state := readFile(t, filepath.Join(dir, "state.json")); state != `{"version":1,"lastChat":42}` {
+		t.Fatalf("the earlier state was not moved: %q", state)
+	}
+	out := ti.out.String()
+	for _, want := range []string{"Logs: " + filepath.Join(dir, "transmission-telegram.log"), "run -install again",
+		"the settings were copied from " + earlierConfig, `writes C:\Users\alice\bot.log (logfile) as LocalSystem, outside`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+
+	// Removing it removes the copy of the program, and keeps the settings.
+	if err := os.WriteFile(filepath.Join(dir, "transmission-telegram.exe"), []byte("program"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ti.host.uninstallWindows = func() error { return nil }
+	if err := ti.host.uninstall(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "transmission-telegram.exe")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("the copy of the program is still there: %v", err)
+	}
+	if !strings.Contains(ti.out.String(), "The settings in "+dir+" were kept") {
 		t.Errorf("output = %s", ti.out.String())
 	}
 	ti.host.uninstallWindows = func() error { return errors.New("no transmission-telegram service is installed") }
 	if err := ti.host.uninstall(); err == nil {
 		t.Fatal("a failed removal was reported as done")
+	}
+
+	// A folder that cannot be made private stops -install before anything
+	// is installed.
+	ti.host.secureDir = func(string) error { return errors.New("it belongs to EVIL\\mallory") }
+	installed = nil
+	if err := ti.host.install(context.Background(), installConfig(t)); err == nil || !strings.Contains(err.Error(), "mallory") || installed != nil {
+		t.Fatalf("install into a folder of another user's = %v, installed %q", err, installed)
+	}
+}
+
+// The program is copied to the service's folder, over an older copy, but
+// not onto itself, when -install is run from the copy.
+func TestCopyExecutable(t *testing.T) {
+	dir := t.TempDir()
+	source, target := filepath.Join(dir, "new.exe"), filepath.Join(dir, "service", "transmission-telegram.exe")
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []struct{ path, content string }{{source, "new program"}, {target, "old program"}} {
+		if err := os.WriteFile(file.path, []byte(file.content), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := copyExecutable(source, target); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, target); got != "new program" {
+		t.Fatalf("target = %q", got)
+	}
+	if err := copyExecutable(target, target); err != nil || readFile(t, target) != "new program" {
+		t.Fatalf("copying the program onto itself: %v", err)
+	}
+	if entries, _ := os.ReadDir(filepath.Dir(target)); len(entries) != 1 {
+		t.Fatalf("temporary files left behind: %v", entries)
+	}
+}
+
+// As root for an account, as through sudo, -install writes the account's
+// files in its home without following links out of it, which the account
+// could plant as they are written to have root write anywhere.
+func TestAccountFilesStayInTheAccountsHome(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows has no sudo, and its files are not given to another account")
+	}
+	home, outside := t.TempDir(), t.TempDir()
+	alice := account{name: "alice", home: home, uid: os.Getuid(), gid: os.Getgid()}
+	path := filepath.Join(home, ".config", "transmission-telegram", "transmission-telegram.conf")
+	if err := writeAccountFile(path, "token = 123:SECRET\n", alice); err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o600 || readFile(t, path) != "token = 123:SECRET\n" {
+		t.Fatalf("the file: %v, %v", info, err)
+	}
+	if info, err := os.Stat(filepath.Dir(path)); err != nil || info.Mode().Perm() != 0o700 {
+		t.Fatalf("its folder: %v, %v", info, err)
+	}
+
+	// A link out of the home directory is not followed.
+	linked := t.TempDir()
+	alice.home = linked
+	if err := os.Symlink(outside, filepath.Join(linked, ".config")); err != nil {
+		t.Fatal(err)
+	}
+	err := writeAccountFile(filepath.Join(linked, ".config", "transmission-telegram", "transmission-telegram.conf"), "token = x\n", alice)
+	if err == nil {
+		t.Fatal("followed a link out of the home directory")
+	}
+	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
+		t.Fatalf("wrote outside the home directory: %v", entries)
+	}
+
+	// A file the administrator puts elsewhere is written there.
+	elsewhere := filepath.Join(outside, "etc", "transmission-telegram.conf")
+	if err := writeAccountFile(elsewhere, "token = y\n", alice); err != nil || readFile(t, elsewhere) != "token = y\n" {
+		t.Fatalf("writing outside the home directory, as asked: %v", err)
 	}
 }
 
