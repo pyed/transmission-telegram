@@ -306,6 +306,9 @@ func TestTurtleScheduleAndLimits(t *testing.T) {
 	b.turtle(ctx, req("schedule", "10:00-10:00"))
 	b.turtle(ctx, req("schedule", "10:00-11:00", "someday"))
 	b.turtle(ctx, req("schedule", "10:00-11:00", "mon,someday"))
+	// A limit of 0 would stall every transfer while turtle mode is on.
+	b.turtle(ctx, req("limits", "0", "20"))
+	b.turtle(ctx, req("limits", "100", "0"))
 
 	want := []string{
 		`{"method":"session-set","arguments":{"alt-speed-time-begin":1380,"alt-speed-time-day":62,"alt-speed-time-enabled":true,"alt-speed-time-end":420}}`,
@@ -318,7 +321,8 @@ func TestTurtleScheduleAndLimits(t *testing.T) {
 	}
 	texts := ft.sentTexts()
 	if texts[0] != "🐢 <b>Turtle schedule:</b> 23:00–07:00, weekends (↓ 40 KB/s ↑ 10 KB/s)" || texts[4] != "🐢 <b>Turtle limits:</b> ↓ 100 KB/s ↑ 20 KB/s" ||
-		texts[5] != turtleUsage || texts[6] != turtleUsage || texts[7] != turtleUsage || texts[8] != turtleUsage {
+		texts[5] != turtleUsage || texts[6] != turtleUsage || texts[7] != turtleUsage || texts[8] != turtleUsage ||
+		texts[9] != turtleZeroLimit || texts[10] != turtleZeroLimit {
 		t.Fatalf("replies = %q", texts)
 	}
 	if got := describeDays(74); got != "Mon, Wed, Sat" {

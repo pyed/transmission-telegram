@@ -392,3 +392,49 @@ func TestParseFlags_MissingMandatory(t *testing.T) {
 		t.Fatalf("expected error when token is missing")
 	}
 }
+
+// A token with characters no token has is refused at once, without the
+// message repeating it: such a token breaks every request's URL, and the
+// error then names the URL, token and all.
+func TestMalformedTokensAreRefusedWithoutRepeatingThem(t *testing.T) {
+	for _, token := range []string{"123456:AAsecret%zz", "123456:AA secret", "123456:AA/secret", "123456:AAsecret\x7f"} {
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		_, err := ParseFlags(fs, []string{"-master=1"}, func(name string) string {
+			if name == "TT_BOT_TOKEN" {
+				return token
+			}
+			return ""
+		})
+		if err == nil || !strings.Contains(err.Error(), "characters a token never has") {
+			t.Errorf("token %q: %v", token, err)
+			continue
+		}
+		if strings.Contains(err.Error(), "secret") {
+			t.Errorf("the error repeats the token: %v", err)
+		}
+	}
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	if _, err := ParseFlags(fs, []string{"-master=1", "-token=123456789:AAHdqTcvCH1vGWJxfSe-ofSAs0K5PALD_aw"}, func(string) string { return "" }); err != nil {
+		t.Fatalf("a real-looking token was refused: %v", err)
+	}
+}
+
+// TR_AUTH without a colon used to be ignored without a word.
+func TestTRAuthWithoutAColonIsReported(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err := ParseFlags(fs, []string{"-master=1", "-token=1:a"}, func(name string) string {
+		if name == "TR_AUTH" {
+			return "just-a-secret-password"
+		}
+		return ""
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Username != "" || cfg.Password != "" {
+		t.Fatalf("credentials = %q / %q", cfg.Username, cfg.Password)
+	}
+	if len(cfg.Warnings) != 1 || !strings.Contains(cfg.Warnings[0], "TR_AUTH is ignored") || strings.Contains(cfg.Warnings[0], "secret") {
+		t.Fatalf("warnings = %q", cfg.Warnings)
+	}
+}

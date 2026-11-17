@@ -263,22 +263,39 @@ func (b *Bot) deldata(ctx context.Context, r *request) {
 		b.reply(ctx, r, summary("", nil, problems))
 		return
 	}
-	lines := []string{"💣 <b>Delete these torrents and their data?</b> The files cannot be got back."}
 	refs := make([]torrentRef, len(torrents))
 	for i, t := range torrents {
-		lines = append(lines, fmt.Sprintf("<code>%d</code> %s (%s)", t.ID, esc(t.Name), size(t.SizeWhenDone)))
 		refs[i] = torrentRef{id: t.ID, fingerprint: torrentFingerprint(t.HashString)}
-	}
-	for _, problem := range problems {
-		lines = append(lines, "⚠️ "+problem)
 	}
 	keyboard := &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
 		{Text: "💣 Yes, delete the data", CallbackData: "dd:yes"}, {Text: "Cancel", CallbackData: "dd:no"},
 	}}}
-	messageID, _ := b.send(ctx, r.chatID, strings.Join(lines, "\n"), keyboard)
+	messageID, _ := b.send(ctx, r.chatID, deletionQuestion(torrents, problems), keyboard)
 	if messageID != 0 {
 		b.rememberScreen(screenKey{r.chatID, messageID}, &screen{command: "deldata", remove: refs})
 	}
+}
+
+// deletionQuestion is /deldata's question: one message, which its buttons
+// need, with long names cut, and when it still does not fit, a count of the
+// torrents left out.
+func deletionQuestion(torrents transmission.Torrents, problems []string) string {
+	heading := "💣 <b>Delete these torrents and their data?</b> The files cannot be got back."
+	room := maxMessageLength - renderedLength(heading) - 1
+	var body string
+	for _, limit := range nameLimits {
+		lines := make([]string, 0, len(torrents)+len(problems))
+		for _, t := range torrents {
+			lines = append(lines, fmt.Sprintf("<code>%d</code> %s (%s)", t.ID, esc(shorten(t.Name, limit)), size(t.SizeWhenDone)))
+		}
+		for _, problem := range problems {
+			lines = append(lines, "⚠️ "+problem)
+		}
+		if body = fitBlocksIn(lines, "\n", room); body == strings.Join(lines, "\n") {
+			break
+		}
+	}
+	return heading + "\n" + body
 }
 
 // confirmDeletion answers /deldata's question: dd:yes deletes the torrents
@@ -508,24 +525,17 @@ func (b *Bot) reannounce(ctx context.Context, r *request) {
 		return
 	}
 
-	var ids []int
-	for _, idStr := range r.args {
-		id, err := strconv.Atoi(idStr)
-		if err != nil {
-			continue
+	// The torrents are looked up first, so that the reply names them, and
+	// says which IDs name none rather than counting them as done.
+	torrents, problems, ok := b.torrentsNamed(ctx, r, "reannounce")
+	if !ok {
+		return
+	}
+	if len(torrents) > 0 {
+		if err := b.Client.ReannounceTorrents(ctx, torrents.GetIDs()...); err != nil {
+			b.replyError(ctx, r, "reannounce", err)
+			return
 		}
-		ids = append(ids, id)
 	}
-
-	if len(ids) == 0 {
-		b.reply(ctx, r, "<b>reannounce:</b> no valid IDs provided")
-		return
-	}
-
-	if err := b.Client.ReannounceTorrents(ctx, ids...); err != nil {
-		b.replyError(ctx, r, "reannounce", err)
-		return
-	}
-
-	b.reply(ctx, r, fmt.Sprintf("📡 Re-announced %d torrent(s) to trackers", len(ids)))
+	b.reply(ctx, r, summary("📡 Asked the trackers for peers", torrents, problems))
 }

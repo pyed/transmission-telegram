@@ -196,7 +196,9 @@ func (b *Bot) checkDigest(ctx context.Context) {
 			return
 		}
 		d := was
-		_, err = b.send(ctx, chatID, text, nil)
+		// A group that became a supergroup gets it in its new chat, where
+		// the digest has moved.
+		_, chatID, err := b.sendIn(ctx, chatID, text, nil)
 		switch {
 		case err == nil:
 			d.LastDue, d.Since = due, now.Unix()

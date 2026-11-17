@@ -108,3 +108,35 @@ func TestStateKeepsChangesItCannotSave(t *testing.T) {
 		}
 	})
 }
+
+// A group that becomes a supergroup keeps what the bot remembered of it,
+// under its new ID, except its status message; what the new chat already
+// has wins.
+func TestMoveChat(t *testing.T) {
+	data := Data{
+		LastChat: -4001,
+		Notify:   map[int64][]string{-4001: {"completed", "errors"}, 7: {"disk"}},
+		Sorts:    map[int64]string{-4001: "rev size", -1009: "name"},
+		Digest:   map[int64]Digest{-4001: {Time: "08:00"}},
+		Status:   map[int64]int{-4001: 12},
+	}
+	if !data.MoveChat(-4001, -1009) {
+		t.Fatal("MoveChat reported no change")
+	}
+	if data.LastChat != -1009 || len(data.Notify[-1009]) != 2 || data.Notify[7][0] != "disk" || data.Sorts[-1009] != "name" ||
+		data.Digest[-1009].Time != "08:00" || len(data.Status) != 0 {
+		t.Fatalf("after the move: %+v", data)
+	}
+	for _, gone := range []bool{data.Notify[-4001] != nil, data.Sorts[-4001] != "", data.Digest[-4001].Time != ""} {
+		if gone {
+			t.Fatalf("the old chat is still remembered: %+v", data)
+		}
+	}
+	if data.MoveChat(-4001, -1009) {
+		t.Fatal("a second move reported a change")
+	}
+	var empty Data
+	if empty.MoveChat(1, 2) {
+		t.Fatal("moving a chat of empty state reported a change")
+	}
+}

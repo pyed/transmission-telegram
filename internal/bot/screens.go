@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -62,7 +63,13 @@ func (s *screenStore) put(key screenKey, sc *screen) {
 }
 
 func (s *screenStore) forget(key screenKey) {
+	if _, known := s.screens[key]; !known {
+		return
+	}
 	delete(s.screens, key)
+	// Its place in the order goes too, or a screen put again under the
+	// same key would be forgotten before its time.
+	s.order = slices.DeleteFunc(s.order, func(k screenKey) bool { return k == key })
 }
 
 func (s *screenStore) get(key screenKey) (screen, bool) {
@@ -127,6 +134,8 @@ func (b *Bot) hasScreen(p *press) bool {
 
 // listPage shows one page of a listing: its torrents a line each, and a
 // button for each, with buttons to move between pages when there are more.
+// Long names are cut so that the page is one message, which its buttons
+// can edit.
 func listPage(l listing, page int) (string, *models.InlineKeyboardMarkup) {
 	pages := (len(l.torrents) + pageSize - 1) / pageSize
 	page = max(0, min(page, pages-1))
@@ -136,10 +145,8 @@ func listPage(l listing, page int) (string, *models.InlineKeyboardMarkup) {
 	if line == nil {
 		line = torrentLine
 	}
-	lines := make([]string, 0, len(shown)+2)
 	var buttons [][]models.InlineKeyboardButton
 	for i, t := range shown {
-		lines = append(lines, line(t))
 		if i%buttonsPerRow == 0 {
 			buttons = append(buttons, nil)
 		}
@@ -148,8 +155,9 @@ func listPage(l listing, page int) (string, *models.InlineKeyboardMarkup) {
 			CallbackData: fmt.Sprintf("t:%d:%s", t.ID, torrentFingerprint(t.HashString)),
 		})
 	}
+	var footer []string
 	if pages > 1 {
-		lines = append(lines, "", fmt.Sprintf("<i>Page %d of %d · %d torrents</i>", page+1, pages, len(l.torrents)))
+		footer = []string{"", fmt.Sprintf("<i>Page %d of %d · %d torrents</i>", page+1, pages, len(l.torrents))}
 		var nav []models.InlineKeyboardButton
 		if page > 0 {
 			nav = append(nav, models.InlineKeyboardButton{Text: "◀", CallbackData: fmt.Sprintf("pg:%d", page-1)})
@@ -159,7 +167,41 @@ func listPage(l listing, page int) (string, *models.InlineKeyboardMarkup) {
 		}
 		buttons = append(buttons, nav)
 	}
-	return strings.Join(lines, "\n"), &models.InlineKeyboardMarkup{InlineKeyboard: buttons}
+	text := fitNames(func(limit int) string {
+		lines := make([]string, 0, len(shown)+len(footer))
+		for _, t := range shown {
+			short := *t
+			short.Name, short.ErrorString = shorten(t.Name, limit), shorten(t.ErrorString, limit)
+			lines = append(lines, line(&short))
+		}
+		return strings.Join(append(lines, footer...), "\n")
+	})
+	return text, &models.InlineKeyboardMarkup{InlineKeyboard: buttons}
+}
+
+// nameLimits are the lengths that fitNames cuts names to, in turn; 0 leaves
+// them whole.
+var nameLimits = []int{0, 300, 150, 80, 40, 20}
+
+// fitNames returns what render shows with names cut to the first of
+// nameLimits that makes it one message, or to the shortest.
+func fitNames(render func(limit int) string) string {
+	var text string
+	for _, limit := range nameLimits {
+		if text = render(limit); renderedLength(text) <= maxMessageLength {
+			break
+		}
+	}
+	return text
+}
+
+// shorten cuts text to limit, as telegramLength measures, ending it with an
+// ellipsis; a limit of 0 leaves it whole.
+func shorten(text string, limit int) string {
+	if limit <= 0 || telegramLength(text) <= limit {
+		return text
+	}
+	return telegramPrefix(text, limit-1) + "…"
 }
 
 // turnPage shows another page of a remembered list: pg:<page>.

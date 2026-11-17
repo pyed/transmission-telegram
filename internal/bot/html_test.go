@@ -89,7 +89,7 @@ func TestRepliesAreValidHTMLAndShowNamesExactly(t *testing.T) {
 		{"errors"}, {"active"}, {"info", "1"}, {"info", "<x>"}, {"files", "1"}, {"files", "<x>"},
 		{"stats"}, {"speed"}, {"count"}, {"trackers"},
 		{"version"}, {"help"}, {"sort"}, {"sort", "rev", "size"}, {"sort", "<bad>"}, {"downloaddir", "/media/<a & b>"},
-		{"downlimit", "100"}, {"uplimit", "x<"}, {"limit"}, {"limit", "down", "5"}, {"limit", "<x>"}, {"whoami"}, {"turtle", "on"}, {"turtle", "schedule"}, {"turtle", "schedule", "<x>"}, {"free", "/media/<a & b>"}, {"reannounce", "all"},
+		{"downlimit", "100"}, {"uplimit", "x<"}, {"limit"}, {"limit", "down", "5"}, {"limit", "<x>"}, {"whoami"}, {"turtle", "on"}, {"turtle", "schedule"}, {"turtle", "schedule", "<x>"}, {"free", "/media/<a & b>"}, {"reannounce", "all"}, {"reannounce", "1", "<x>"},
 		{"add", "magnet:?xt=urn:btih:<x>&dn=a"}, {"add", "magnet:?xt=urn:btih:x", "d=/<a&b>", "l=<x>", "paused"}, {"add", "<x>=1"}, {"stop", "1", "<x>"}, {"start", "all"}, {"check", "1"},
 		{"del", "1"}, {"move", "1", "/<a & b>"}, {"labels"}, {"labels", "<x>"}, {"setlabel", "1", "<x>"}, {"queue"}, {"queue", "top", "<x>"}, {"port"}, {"status"}, {"status", "<x>"}, {"status", "off"},
 		{"digest"}, {"digest", "<x>"}, {"digest", "08:00", "<x>"}, {"digest", "now"}, {"digest", "08:00"}, {"digest", "off"}, {"deldata", "<x>"}, {"notify"}, {"notify", "errors", "on"}, {"notify", "<x>"}, {"nosuchcommand"},

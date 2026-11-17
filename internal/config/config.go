@@ -227,6 +227,10 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	}
 	username, password, found := strings.Cut(getenv("TR_AUTH"), ":")
 	if !found {
+		if strings.TrimSpace(username) != "" {
+			// Not quoted: it may be a password alone.
+			cfg.Warnings = append(cfg.Warnings, "TR_AUTH is ignored: it has no colon, and should be user:password")
+		}
 		username, password = "", ""
 	}
 	for _, setting := range []struct{ name, variable, value string }{
@@ -250,6 +254,13 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 	cfg.RPCURL = strings.TrimSpace(cfg.RPCURL)
 	if cfg.BotToken == "" {
 		return nil, errors.New("telegram bot token is required (-token, a config file, or TT_BOT_TOKEN)")
+	}
+	// The token goes into every request's URL, where a character such as %
+	// makes the request fail before it is sent, with an error that repeats
+	// the URL. The message leaves the token out.
+	if strings.IndexFunc(cfg.BotToken, func(r rune) bool { return !isTokenRune(r) }) >= 0 {
+		return nil, errors.New("the telegram bot token (-token, a config file, or TT_BOT_TOKEN) has characters a token never has; " +
+			"a token is digits, a colon, and then letters, digits, - and _: copy it again from @BotFather")
 	}
 	if len(cfg.Masters) < 1 {
 		return nil, errors.New("at least one authorized user is required (-master, a config file, or TT_MASTERS); start with -master=1 to have the bot tell you your user ID")
@@ -277,4 +288,10 @@ func ParseFlags(fs *flag.FlagSet, args []string, getenv func(string) string) (*C
 		}
 	})
 	return cfg, nil
+}
+
+// isTokenRune reports whether r may appear in a Telegram bot token, such as
+// 123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw.
+func isTokenRune(r rune) bool {
+	return r == ':' || r == '-' || r == '_' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z'
 }

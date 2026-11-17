@@ -34,9 +34,6 @@ const (
 // noPreview keeps links in replies from unfolding into previews.
 var noPreview = &models.LinkPreviewOptions{IsDisabled: tgbot.True()}
 
-// errMessageTooLong is returned for an edit that would not fit one message.
-var errMessageTooLong = errors.New("message is too long for one Telegram message")
-
 // esc escapes text for Telegram's HTML parse mode. Every piece of text that
 // is not the bot's own markup goes through it: torrent names, paths, errors,
 // and whatever users typed.
@@ -123,12 +120,26 @@ func chunkMessage(text string) []string {
 // attached text file. It returns the message's ID, or 0 when the text took
 // more than one message, which is then not to be edited.
 func (b *Bot) send(ctx context.Context, chatID int64, text string, markup models.ReplyMarkup) (int, error) {
+	messageID, _, err := b.sendIn(ctx, chatID, text, markup)
+	return messageID, err
+}
+
+// sendIn is send, and also returns the chat the message went to: another
+// than chatID when that group became a supergroup, which is a new chat.
+//
+// A message with buttons is always one message, cut short if need be: a
+// reply in several parts cannot be edited, and its buttons would not work.
+func (b *Bot) sendIn(ctx context.Context, chatID int64, text string, markup models.ReplyMarkup) (int, int64, error) {
+	if markup != nil {
+		text = fitMessage(text)
+	}
 	chunks := chunkMessage(text)
 	if len(chunks) == 0 {
-		return 0, errors.New("refusing to send an empty message")
+		return 0, chatID, errors.New("refusing to send an empty message")
 	}
 	if len(chunks) > maxMessageChunks {
-		return 0, b.sendFile(ctx, chatID, plainText(text))
+		chatID, err := b.sendFile(ctx, chatID, plainText(text))
+		return 0, chatID, err
 	}
 	var messageID int
 	for i, chunk := range chunks {
@@ -142,22 +153,35 @@ func (b *Bot) send(ctx context.Context, chatID int64, text string, markup models
 			params.ReplyMarkup = markup
 		}
 		message, err := b.sendMessage(ctx, params)
+		if id, ok := params.ChatID.(int64); ok {
+			chatID = id // the chat it went to
+		}
 		if err != nil {
 			b.Logger.Error("Sending a message failed", "chat_id", chatID, "error", err)
-			return 0, err
+			return 0, chatID, err
 		}
 		messageID = message.ID
 	}
 	if len(chunks) > 1 {
-		return 0, nil
+		return 0, chatID, nil
 	}
-	return messageID, nil
+	return messageID, chatID, nil
 }
 
-// sendMessage sends one message, retrying passing failures. If Telegram
-// cannot parse its HTML, which only a bug in the bot causes, it goes again
-// as the plain text it was meant to show.
+// sendMessage sends one message, retrying passing failures, and following
+// a group that became a supergroup to its new chat, which params then
+// names. If Telegram cannot parse its HTML, which only a bug in the bot
+// causes, it goes again as the plain text it was meant to show.
 func (b *Bot) sendMessage(ctx context.Context, params *tgbot.SendMessageParams) (*models.Message, error) {
+	message, err := b.sendMessageTo(ctx, params)
+	if to, ok := b.followMigration(params.ChatID, err); ok {
+		params.ChatID = to
+		message, err = b.sendMessageTo(ctx, params)
+	}
+	return message, err
+}
+
+func (b *Bot) sendMessageTo(ctx context.Context, params *tgbot.SendMessageParams) (*models.Message, error) {
 	var message *models.Message
 	err := b.retryTelegram(ctx, func() (err error) {
 		message, err = b.API.SendMessage(ctx, params)
@@ -176,28 +200,60 @@ func (b *Bot) sendMessage(ctx context.Context, params *tgbot.SendMessageParams) 
 	return message, err
 }
 
-// sendFile attaches text as a file, for replies too long to read as messages.
-func (b *Bot) sendFile(ctx context.Context, chatID int64, text string) error {
-	err := b.retryTelegram(ctx, func() error {
-		_, err := b.API.SendDocument(ctx, &tgbot.SendDocumentParams{
-			ChatID:   chatID,
-			Document: &models.InputFileUpload{Filename: "transmission-telegram.txt", Data: strings.NewReader(text)},
-			Caption:  "This reply is too long for chat messages, so it is attached as a file.",
+// sendFile attaches text as a file, for replies too long to read as
+// messages, and returns the chat it went to.
+func (b *Bot) sendFile(ctx context.Context, chatID int64, text string) (int64, error) {
+	attach := func(chatID int64) error {
+		return b.retryTelegram(ctx, func() error {
+			_, err := b.API.SendDocument(ctx, &tgbot.SendDocumentParams{
+				ChatID:   chatID,
+				Document: &models.InputFileUpload{Filename: "transmission-telegram.txt", Data: strings.NewReader(text)},
+				Caption:  "This reply is too long for chat messages, so it is attached as a file.",
+			})
+			return err
 		})
-		return err
-	})
+	}
+	err := attach(chatID)
+	if to, ok := b.followMigration(chatID, err); ok {
+		chatID = to
+		err = attach(chatID)
+	}
 	if err != nil {
 		b.Logger.Error("Sending a file failed", "chat_id", chatID, "error", err)
 	}
-	return err
+	return chatID, err
 }
 
-// edit replaces a message's HTML text and markup. An edit that changes
-// nothing succeeds.
-func (b *Bot) edit(ctx context.Context, chatID int64, messageID int, text string, markup models.ReplyMarkup) error {
-	if renderedLength(text) > maxMessageLength {
-		return errMessageTooLong
+// fitMessage returns an HTML message cut to fit one Telegram message,
+// between lines, ending with an ellipsis when it was cut. The bot's markup
+// never spans lines, so the result is valid HTML.
+func fitMessage(text string) string {
+	if renderedLength(text) <= maxMessageLength {
+		return text
 	}
+	const more = "\n…"
+	lines := strings.Split(text, "\n")
+	length := 0
+	for i, line := range lines {
+		added := renderedLength(line)
+		if i > 0 {
+			added++ // the line break
+		}
+		if length+added+telegramLength(more) > maxMessageLength {
+			if i == 0 {
+				return esc(telegramPrefix(plainText(line), maxMessageLength-1)) + "…"
+			}
+			return strings.Join(lines[:i], "\n") + more
+		}
+		length += added
+	}
+	return text
+}
+
+// edit replaces a message's HTML text and markup, cut to fit one message.
+// An edit that changes nothing succeeds.
+func (b *Bot) edit(ctx context.Context, chatID int64, messageID int, text string, markup models.ReplyMarkup) error {
+	text = fitMessage(text)
 	params := &tgbot.EditMessageTextParams{
 		ChatID:             chatID,
 		MessageID:          messageID,
@@ -222,6 +278,9 @@ func (b *Bot) edit(ctx context.Context, chatID int64, messageID int, text string
 	if err != nil && notModified(err) {
 		return nil
 	}
+	// The message stays in the old chat, where it can no longer be edited;
+	// what the bot remembers moves to the new one.
+	b.followMigration(chatID, err)
 	return err
 }
 

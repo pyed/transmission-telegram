@@ -486,3 +486,91 @@ func TestRunChecksAtOnceAndStops(t *testing.T) {
 		t.Fatal("Run did not stop")
 	}
 }
+
+// A torrent not done when the bot stopped, and removed before it started
+// again, is forgotten at the first look, rather than kept in the state for
+// good.
+func TestTorrentsRemovedWhileAwayAreForgotten(t *testing.T) {
+	gone := fmt.Sprintf("%040x", 999)
+	wt := newWatcherTest(t, torrent(1, "Still here", 0.5))
+	if err := wt.State.Update(func(data *state.Data) { data.Incomplete = []string{gone} }); err != nil {
+		t.Fatal(err)
+	}
+	wt.step()
+	var incomplete []string
+	wt.State.Read(func(data *state.Data) { incomplete = data.Incomplete })
+	if want := []string{torrent(1, "", 0).HashString}; !slices.Equal(incomplete, want) {
+		t.Fatalf("incomplete = %q, want %q", incomplete, want)
+	}
+}
+
+// A notification for a group that became a supergroup is refused for good,
+// and does not hold up the others.
+func TestNotificationsToAnUpgradedGroupDoNotWait(t *testing.T) {
+	wt := newWatcherTest(t, torrent(1, "One", 0.5))
+	if err := wt.State.Update(func(data *state.Data) { data.Notify = map[int64][]string{-4001: {Completed}, 42: {Completed}} }); err != nil {
+		t.Fatal(err)
+	}
+	healthy := false
+	wt.Send = func(_ context.Context, chatID int64, text string, _ models.ReplyMarkup) error {
+		switch {
+		case chatID == -4001:
+			return &tgbot.MigrateError{Message: "Bad Request: group chat was upgraded to a supergroup chat", MigrateToChatID: -1009}
+		case !healthy:
+			return errors.New("connection reset")
+		}
+		wt.sent = append(wt.sent, sent{chatID, text})
+		return nil
+	}
+	wt.step()
+	wt.transmission.set(func(f *fakeTransmission) { f.torrents[0].PercentDone = 1 })
+	wt.step()
+	healthy = true
+	wt.step()
+	if len(wt.sent) != 1 || wt.sent[0].chatID != 42 || len(wt.pending) != 0 {
+		t.Fatalf("sent %v, pending %d", wt.sent, len(wt.pending))
+	}
+}
+
+// panicking is a Transmission whose first look panics.
+type panicking struct {
+	*fakeTransmission
+	looks  int
+	second chan struct{}
+}
+
+func (p *panicking) GetTorrentsByIDs(ctx context.Context, ids []int, fields ...string) (transmission.Torrents, error) {
+	p.looks++
+	switch p.looks {
+	case 1:
+		panic("a bug")
+	case 2:
+		close(p.second)
+	}
+	return p.fakeTransmission.GetTorrentsByIDs(ctx, ids, fields...)
+}
+
+// A panic in a check is logged, and the checks go on.
+func TestWatcherOutlivesAPanic(t *testing.T) {
+	wt := newWatcherTest(t)
+	p := &panicking{fakeTransmission: wt.transmission, second: make(chan struct{})}
+	var logs strings.Builder
+	wt.Transmission, wt.Interval = p, 5*time.Millisecond
+	wt.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		wt.Run(ctx)
+		close(done)
+	}()
+	select {
+	case <-p.second:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the watcher stopped after a panic")
+	}
+	cancel()
+	<-done
+	if !strings.Contains(logs.String(), "Recovered from a panic in the notification watcher") {
+		t.Fatalf("the panic was not logged:\n%s", logs.String())
+	}
+}

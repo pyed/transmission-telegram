@@ -13,8 +13,16 @@ func isAdmin() bool {
 	return os.Geteuid() == 0
 }
 
-func installWindowsService(string, []string) error {
+func installWindowsService(string, string, []string) error {
 	return errors.New("not Windows")
+}
+
+func secureServiceDir(string) error {
+	return errors.New("not Windows")
+}
+
+func programDataDir() string {
+	return ""
 }
 
 func uninstallWindowsService() error {

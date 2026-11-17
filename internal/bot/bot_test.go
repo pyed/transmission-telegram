@@ -264,3 +264,46 @@ func TestRecoverMiddlewareContainsHandlerPanicWithNilUpdate(t *testing.T) {
 		t.Fatalf("expected nil-update panic to be contained, got %q", logOutput)
 	}
 }
+
+// Errors that show the bot token, as one for a request the library could
+// not make does, are logged and returned with it masked.
+func TestStartupErrorsHideTheToken(t *testing.T) {
+	shortenStartupDelay(t)
+	ft := newFakeTelegram(t)
+	ft.script("getMe",
+		`{"ok":false,"error_code":502,"description":"Bad Gateway for /bot`+testBotToken+`/getMe"}`,
+		`{"ok":false,"error_code":401,"description":"Unauthorized: `+testBotToken+`"}`,
+	)
+	var logs strings.Builder
+	cfg := &config.Config{BotToken: testBotToken}
+	_, err := New(context.Background(), cfg, nil, memoryState(t), slog.New(slog.NewTextHandler(&logs, nil)), tgbot.WithServerURL(ft.URL))
+	if err == nil || !errors.Is(err, tgbot.ErrorUnauthorized) {
+		t.Fatalf("New = %v, want the refusal", err)
+	}
+	if !strings.Contains(logs.String(), "Bad Gateway for /bot***/getMe") {
+		t.Fatalf("the retry was not logged with the token masked:\n%s", logs.String())
+	}
+	if strings.Contains(err.Error()+logs.String(), testBotToken) {
+		t.Fatalf("the token was shown: %v\n%s", err, logs.String())
+	}
+}
+
+// Start returns once the work given to Background has ended, as main's
+// notification watcher, which used to be left running at shutdown.
+func TestStartWaitsForBackgroundWork(t *testing.T) {
+	ft := newFakeTelegram(t)
+	b := newTestBot(t, ft.newBot(t), nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	var finished atomic.Bool
+	b.Background(ctx, "test", func(ctx context.Context) {
+		<-ctx.Done()
+		time.Sleep(50 * time.Millisecond)
+		finished.Store(true)
+	})
+	b.Background(ctx, "panicking", func(context.Context) { panic("a bug") })
+	time.AfterFunc(20*time.Millisecond, cancel)
+	b.Start(ctx)
+	if !finished.Load() {
+		t.Fatal("Start returned before the background work ended")
+	}
+}

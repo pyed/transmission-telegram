@@ -173,7 +173,16 @@ func (b *Bot) editPressed(ctx context.Context, p *press, text string, markup mod
 	}
 }
 
+// maxCallbackAnswer is Telegram's limit on a button press's answer, in
+// UTF-16 code units; a longer one is refused, and the press left waiting.
+const maxCallbackAnswer = 200
+
+// answerCallback answers a button press, with text cut to fit when it is
+// too long, as an error that carries a web page can be.
 func (b *Bot) answerCallback(ctx context.Context, callbackID, text string, alert bool) {
+	if telegramLength(text) > maxCallbackAnswer {
+		text = telegramPrefix(text, maxCallbackAnswer-1) + "…"
+	}
 	if _, err := b.API.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
 		CallbackQueryID: callbackID,
 		Text:            text,

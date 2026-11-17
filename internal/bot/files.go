@@ -88,12 +88,8 @@ func filesPage(t *transmission.Torrent, page int) (string, *models.InlineKeyboar
 	pages := (len(t.Files) + pageSize - 1) / pageSize
 	page = max(0, min(page, pages-1))
 	first, last := page*pageSize, min((page+1)*pageSize, len(t.Files))
-	lines := []string{heading}
 	var rows [][]models.InlineKeyboardButton
 	for i := first; i < last; i++ {
-		file := t.Files[i]
-		lines = append(lines, fmt.Sprintf("<b>%d</b> %s %s · %s (%s)", i+1, fileIcons[fileState(t.FileStats[i])],
-			esc(file.Name), size(uint64(max(file.Length, 0))), filePercent(file)))
 		if (i-first)%buttonsPerRow == 0 {
 			rows = append(rows, nil)
 		}
@@ -101,8 +97,9 @@ func filesPage(t *transmission.Torrent, page int) (string, *models.InlineKeyboar
 			Text: strconv.Itoa(i + 1), CallbackData: fmt.Sprintf("fo:%s:%d", ref, i),
 		})
 	}
+	footer := []string{"", "⬜ skipped · 🔻 low · ✅ normal · ⭐ high priority. Tap a number to change a file."}
 	if pages > 1 {
-		lines = append(lines, "", fmt.Sprintf("<i>Page %d of %d · %d files</i>", page+1, pages, len(t.Files)))
+		footer = append([]string{"", fmt.Sprintf("<i>Page %d of %d · %d files</i>", page+1, pages, len(t.Files))}, footer...)
 		var nav []models.InlineKeyboardButton
 		if page > 0 {
 			nav = append(nav, models.InlineKeyboardButton{Text: "◀", CallbackData: fmt.Sprintf("fl:%s:%d", ref, page-1)})
@@ -116,8 +113,18 @@ func filesPage(t *transmission.Torrent, page int) (string, *models.InlineKeyboar
 		{Text: "⬜ Skip all", CallbackData: fmt.Sprintf("fa:%s:%s", ref, fileSkip)},
 		{Text: "✅ Download all", CallbackData: fmt.Sprintf("fa:%s:%s", ref, fileNormal)},
 	}, card)
-	lines = append(lines, "", "⬜ skipped · 🔻 low · ✅ normal · ⭐ high priority. Tap a number to change a file.")
-	return strings.Join(lines, "\n"), &models.InlineKeyboardMarkup{InlineKeyboard: rows}
+	// Long names are cut so that the page is one message, which its
+	// buttons can edit.
+	text := fitNames(func(limit int) string {
+		lines := []string{fmt.Sprintf("📂 <code>%d</code> <b>%s</b>", t.ID, esc(shorten(t.Name, limit)))}
+		for i := first; i < last; i++ {
+			file := t.Files[i]
+			lines = append(lines, fmt.Sprintf("<b>%d</b> %s %s · %s (%s)", i+1, fileIcons[fileState(t.FileStats[i])],
+				esc(shorten(file.Name, limit)), size(uint64(max(file.Length, 0))), filePercent(file)))
+		}
+		return strings.Join(append(lines, footer...), "\n")
+	})
+	return text, &models.InlineKeyboardMarkup{InlineKeyboard: rows}
 }
 
 func filePercent(file transmission.File) string {
@@ -132,9 +139,11 @@ func filePercent(file transmission.File) string {
 func fileCard(t *transmission.Torrent, index int) (string, *models.InlineKeyboardMarkup) {
 	ref := fmt.Sprintf("%d:%s", t.ID, torrentFingerprint(t.HashString))
 	file, state := t.Files[index], fileState(t.FileStats[index])
-	text := fmt.Sprintf("📂 <code>%d</code> <b>%s</b>\nFile %d of %d: <code>%s</code>\n%s · %s done · %s %s",
-		t.ID, esc(t.Name), index+1, len(t.Files), esc(file.Name), size(uint64(max(file.Length, 0))), filePercent(file),
-		fileIcons[state], state)
+	text := fitNames(func(limit int) string {
+		return fmt.Sprintf("📂 <code>%d</code> <b>%s</b>\nFile %d of %d: <code>%s</code>\n%s · %s done · %s %s",
+			t.ID, esc(shorten(t.Name, limit)), index+1, len(t.Files), esc(shorten(file.Name, limit)),
+			size(uint64(max(file.Length, 0))), filePercent(file), fileIcons[state], state)
+	})
 	set := func(label, to string) models.InlineKeyboardButton {
 		return models.InlineKeyboardButton{Text: label, CallbackData: fmt.Sprintf("fs:%s:%d:%s", ref, index, to)}
 	}

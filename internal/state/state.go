@@ -180,3 +180,41 @@ func syncDir(dir string) {
 		file.Close()
 	}
 }
+
+// MoveChat moves what is remembered of chat from to chat to, as when a
+// group becomes a supergroup, which is a new chat: where notifications go,
+// the sort order, and the digest. What chat to already has is kept. The
+// status message ends, since its ID means nothing in the new chat. It
+// reports whether anything changed.
+func (d *Data) MoveChat(from, to int64) bool {
+	changed := false
+	if d.LastChat == from {
+		d.LastChat, changed = to, true
+	}
+	if kinds, ok := d.Notify[from]; ok {
+		if _, has := d.Notify[to]; !has {
+			d.Notify[to] = kinds
+		}
+		delete(d.Notify, from)
+		changed = true
+	}
+	if order, ok := d.Sorts[from]; ok {
+		if _, has := d.Sorts[to]; !has {
+			d.Sorts[to] = order
+		}
+		delete(d.Sorts, from)
+		changed = true
+	}
+	if digest, ok := d.Digest[from]; ok {
+		if _, has := d.Digest[to]; !has {
+			d.Digest[to] = digest
+		}
+		delete(d.Digest, from)
+		changed = true
+	}
+	if _, ok := d.Status[from]; ok {
+		delete(d.Status, from)
+		changed = true
+	}
+	return changed
+}

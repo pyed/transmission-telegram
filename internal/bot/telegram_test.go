@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/go-telegram/bot/models"
 )
 
 func TestChunkMessageShortAndEmpty(t *testing.T) {
@@ -160,14 +162,44 @@ func TestSendFallsBackToPlainTextOnParseErrors(t *testing.T) {
 	}
 }
 
-func TestEditRefusesTextLongerThanAMessage(t *testing.T) {
+// An edit too long for a message is cut to fit, between lines, rather than
+// refused, which used to end a live view and leave a pressed list as it was.
+func TestEditCutsTextLongerThanAMessage(t *testing.T) {
 	ft := newFakeTelegram(t)
 	b := newTestBot(t, ft.newBot(t), nil)
-	if err := b.edit(context.Background(), 42, 1, strings.Repeat("a", maxMessageLength+1), nil); err != errMessageTooLong {
-		t.Fatalf("edit = %v, want errMessageTooLong", err)
+	line := "<b>x</b> " + strings.Repeat("a", 98)
+	text := strings.TrimSuffix(strings.Repeat(line+"\n", 50), "\n")
+	if err := b.edit(context.Background(), 42, 1, text, nil); err != nil {
+		t.Fatalf("edit = %v", err)
 	}
-	if got := ft.callCount("editMessageText"); got != 0 {
-		t.Fatalf("asked Telegram anyway: %d calls", got)
+	edits := ft.editsOf("1")
+	if len(edits) != 1 || renderedLength(edits[0]) > maxMessageLength || !strings.HasSuffix(edits[0], "</b> "+strings.Repeat("a", 98)+"\n…") {
+		t.Fatalf("edits = %q", edits)
+	}
+}
+
+func TestFitMessage(t *testing.T) {
+	if got := fitMessage("short <b>one</b>"); got != "short <b>one</b>" {
+		t.Fatalf("fitMessage changed a short message: %q", got)
+	}
+	// A single line too long for a message is cut as plain text.
+	got := fitMessage("<b>" + strings.Repeat("&lt;😀", 3000) + "</b>")
+	if renderedLength(got) != maxMessageLength || !strings.HasSuffix(got, "…") || strings.Contains(got, "<b>") {
+		t.Fatalf("fitMessage of one long line = %d long: %q…", renderedLength(got), got[:40])
+	}
+}
+
+// A reply with buttons is always one message, which its buttons can edit.
+func TestRepliesWithButtonsAreOneMessage(t *testing.T) {
+	ft := newFakeTelegram(t)
+	b := newTestBot(t, ft.newBot(t), nil)
+	keyboard := &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{{Text: "x", CallbackData: "x"}}}}
+	messageID, err := b.send(context.Background(), 42, strings.Repeat(strings.Repeat("a", 99)+"\n", 100), keyboard)
+	if err != nil || messageID == 0 {
+		t.Fatalf("send = %d, %v", messageID, err)
+	}
+	if texts := ft.sentTexts(); len(texts) != 1 || renderedLength(texts[0]) > maxMessageLength {
+		t.Fatalf("sent %d messages", len(texts))
 	}
 }
 

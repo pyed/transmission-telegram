@@ -2,6 +2,9 @@ name: CI
 
 on:
   push:
+    # A pushed tag runs it through the release workflow, which publishes
+    # nothing until it passes.
+    branches: [ '**' ]
   pull_request:
     branches: [ master, main, dev ]
   schedule:
@@ -9,6 +12,7 @@ on:
     # surface even when nothing is pushed.
     - cron: '23 5 * * 1'
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -25,7 +29,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
-        go-version: [ '1.26.10', '1.27.3' ]
+        go-version: [ '1.26.11', '1.27.4' ]
 
     steps:
     - name: Checkout repository
@@ -43,7 +47,7 @@ jobs:
       run: go mod verify
 
     - name: Check formatting and module tidiness
-      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.27.3'
+      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.27.4'
       shell: bash
       run: |
         unformatted="$(git ls-files -z '*.go' | xargs -0 gofmt -l)"
@@ -55,7 +59,7 @@ jobs:
       run: go vet ./...
 
     - name: Run static analysis
-      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.27.3'
+      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.27.4'
       run: go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./...
 
     - name: Run unit tests
@@ -83,7 +87,7 @@ jobs:
       run: go test -count=1 ./...
 
     - name: Run race detector
-      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.27.3'
+      if: matrix.os == 'ubuntu-latest' && matrix.go-version == '1.27.4'
       run: go test -race ./...
 
     - name: Scan reachable dependencies for vulnerabilities
@@ -130,7 +134,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
-        go-version: '1.27.3'
+        go-version: '1.27.4'
 
     - name: Build binary
       env:
@@ -178,7 +182,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
-        go-version: '1.27.3'
+        go-version: '1.27.4'
 
     - name: Drive the bot against Transmission
       env:

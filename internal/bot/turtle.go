@@ -12,6 +12,9 @@ import (
 const turtleUsage = "<b>turtle:</b> give on, off, <code>schedule HH:MM-HH:MM [days]</code>, " +
 	"<code>schedule off</code>, or <code>limits DOWN UP</code> in KB/s"
 
+const turtleZeroLimit = "<b>turtle:</b> give limits of 1 KB/s or more: a limit of 0 stops every transfer while turtle mode is on. " +
+	"To pause everything, use <code>/stop all</code>."
+
 // Transmission's schedule days: a bitmask from Sunday, 1, to Saturday, 64.
 const (
 	everyDay = 127
@@ -116,7 +119,7 @@ func (b *Bot) turtleSchedule(ctx context.Context, r *request, args []string) {
 		session.AltSpeedDown, session.AltSpeedUp))
 }
 
-// turtleLimits sets turtle mode's limits, in KB/s.
+// turtleLimits sets turtle mode's limits, in KB/s, 1 or more.
 func (b *Bot) turtleLimits(ctx context.Context, r *request, args []string) {
 	if len(args) != 2 {
 		b.reply(ctx, r, turtleUsage)
@@ -126,6 +129,12 @@ func (b *Bot) turtleLimits(ctx context.Context, r *request, args []string) {
 	up, errUp := strconv.ParseUint(args[1], 10, 31)
 	if errDown != nil || errUp != nil {
 		b.reply(ctx, r, turtleUsage)
+		return
+	}
+	// Transmission keeps to a limit of 0, which stalls every transfer
+	// while turtle mode is on, as /limit refuses to.
+	if down == 0 || up == 0 {
+		b.reply(ctx, r, turtleZeroLimit)
 		return
 	}
 	downLimit, upLimit := int64(down), int64(up)
