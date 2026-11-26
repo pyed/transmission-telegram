@@ -19,21 +19,21 @@ func TestMessagesFollowAGroupToItsSupergroup(t *testing.T) {
 	b := newTestBot(t, ft.newBot(t), nil)
 	if err := b.State.Update(func(data *state.Data) {
 		data.LastChat = -4001
-		data.Notify = map[int64][]string{-4001: {"completed"}}
+		data.Notify = map[state.Place][]string{at(-4001): {"completed"}}
 		data.Sorts = map[int64]string{-4001: "rev size"}
-		data.Status = map[int64]int{-4001: 5}
+		data.Status = map[state.Place]int{at(-4001): 5}
 	}); err != nil {
 		t.Fatal(err)
 	}
 	ft.script("sendMessage", upgraded)
-	if err := b.SendHTML(context.Background(), -4001, "✅ <b>Finished:</b> x", nil); err != nil {
+	if err := b.SendHTML(context.Background(), at(-4001), "✅ <b>Finished:</b> x", nil); err != nil {
 		t.Fatalf("SendHTML = %v", err)
 	}
 	if chats := ft.sentChats(); !slices.Equal(chats, []string{"-1009"}) {
 		t.Fatalf("sent to %q", chats)
 	}
 	b.State.Read(func(data *state.Data) {
-		if data.LastChat != -1009 || data.Notify[-1009][0] != "completed" || data.Sorts[-1009] != "rev size" ||
+		if data.LastChat != -1009 || data.Notify[at(-1009)][0] != "completed" || data.Sorts[-1009] != "rev size" ||
 			len(data.Notify) != 1 || len(data.Status) != 0 {
 			t.Fatalf("state after the move: %+v", data)
 		}
@@ -41,8 +41,8 @@ func TestMessagesFollowAGroupToItsSupergroup(t *testing.T) {
 
 	// A long reply, attached as a file, follows the group too.
 	ft.script("sendDocument", upgraded)
-	if chatID, err := b.sendFile(context.Background(), -4001, "long"); err != nil || chatID != -1009 || len(ft.sentDocuments()) != 1 {
-		t.Fatalf("sendFile = %d, %v; documents %d", chatID, err, len(ft.sentDocuments()))
+	if to, err := b.sendFile(context.Background(), at(-4001), "long"); err != nil || to != at(-1009) || len(ft.sentDocuments()) != 1 {
+		t.Fatalf("sendFile = %v, %v; documents %d", to, err, len(ft.sentDocuments()))
 	}
 }
 
@@ -63,7 +63,7 @@ func TestDigestsFollowAGroupToItsSupergroup(t *testing.T) {
 		t.Fatalf("sent to %q", chats)
 	}
 	b.State.Read(func(data *state.Data) {
-		if d, ok := data.Digest[-1009]; !ok || d.LastDue != "2026-10-21" || len(data.Digest) != 1 {
+		if d, ok := data.Digest[at(-1009)]; !ok || d.LastDue != "2026-10-21" || len(data.Digest) != 1 {
 			t.Fatalf("digests after the move: %+v", data.Digest)
 		}
 	})

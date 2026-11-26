@@ -81,8 +81,8 @@ func (f *fakeTransmission) set(change func(f *fakeTransmission)) {
 
 // sent is a notification as the watcher sent it.
 type sent struct {
-	chatID int64
-	text   string
+	to   state.Place
+	text string
 }
 
 // watcherTest is a watcher with a fake Transmission, a state in memory where
@@ -113,11 +113,11 @@ func newWatcherTest(t *testing.T, torrents ...*transmission.Torrent) *watcherTes
 		Transmission: wt.transmission,
 		State:        store,
 		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Send: func(_ context.Context, chatID int64, text string, markup models.ReplyMarkup) error {
+		Send: func(_ context.Context, to state.Place, text string, markup models.ReplyMarkup) error {
 			if wt.fail != nil {
 				return wt.fail
 			}
-			wt.sent = append(wt.sent, sent{chatID, text})
+			wt.sent = append(wt.sent, sent{to, text})
 			var opened string
 			if keyboard, ok := markup.(*models.InlineKeyboardMarkup); ok {
 				opened = keyboard.InlineKeyboard[0][0].CallbackData
@@ -170,7 +170,7 @@ func TestCompletionsAreAnnouncedOnce(t *testing.T) {
 	wt.transmission.set(func(f *fakeTransmission) { f.torrents[0].PercentDone = 1 })
 	wt.step()
 	wt.step()
-	if want := []sent{{42, "✅ <b>Finished:</b> <code>1</code> Debian &lt;12&gt; (4.0 GB)"}}; !slices.Equal(wt.sent, want) {
+	if want := []sent{{chat(42), "✅ <b>Finished:</b> <code>1</code> Debian &lt;12&gt; (4.0 GB)"}}; !slices.Equal(wt.sent, want) {
 		t.Fatalf("sent %v, want %v", wt.sent, want)
 	}
 	if want := []string{"open:1:" + downloading.HashString[:4]}; !slices.Equal(wt.opened, want) {
@@ -345,7 +345,7 @@ func TestBriefOutagesAreNotAnnounced(t *testing.T) {
 // error; tracker warnings are not errors.
 func TestNewErrorsAreAnnouncedOnce(t *testing.T) {
 	wt := newWatcherTest(t, torrent(1, "a", 1), torrent(2, "b", 1), torrent(3, "c", 1))
-	if err := wt.State.Update(func(data *state.Data) { data.Notify = map[int64][]string{7: {Errors}} }); err != nil {
+	if err := wt.State.Update(func(data *state.Data) { data.Notify = map[state.Place][]string{chat(7): {Errors}} }); err != nil {
 		t.Fatal(err)
 	}
 	wt.step()
@@ -364,8 +364,8 @@ func TestNewErrorsAreAnnouncedOnce(t *testing.T) {
 	wt.transmission.set(func(f *fakeTransmission) { fail(f.torrents[0], transmission.ErrorLocalError, "No space left") })
 	wt.step()
 	want := []sent{
-		{7, "⚠️ <b>2 torrents have an error:</b> <i>Unregistered torrent</i>\n<code>1</code> a\n<code>2</code> b"},
-		{7, "⚠️ <b>Error:</b> <code>1</code> a\n<i>No space left</i>"},
+		{chat(7), "⚠️ <b>2 torrents have an error:</b> <i>Unregistered torrent</i>\n<code>1</code> a\n<code>2</code> b"},
+		{chat(7), "⚠️ <b>Error:</b> <code>1</code> a\n<i>No space left</i>"},
 	}
 	if !slices.Equal(wt.sent, want) {
 		t.Fatalf("sent %v\nwant %v", wt.sent, want)
@@ -379,19 +379,66 @@ func TestNewErrorsAreAnnouncedOnce(t *testing.T) {
 // and the last chat used gets none by default.
 func TestChatsFollowTheirChoices(t *testing.T) {
 	data := &state.Data{LastChat: 42}
-	if got := Chats(data, Completed); !slices.Equal(got, []int64{42}) {
+	if got := Chats(data, Completed); !slices.Equal(got, []state.Place{chat(42)}) {
 		t.Fatalf("by default, completions go to %v", got)
 	}
 	if got := Chats(data, Errors); got != nil {
 		t.Fatalf("by default, errors go to %v", got)
 	}
-	data.Notify = map[int64][]string{9: {Completed, Errors}, 8: {Completed}, 7: nil}
-	if got := Chats(data, Completed); !slices.Equal(got, []int64{8, 9}) {
+	data.Notify = map[state.Place][]string{chat(9): {Completed, Errors}, chat(8): {Completed}, chat(7): nil}
+	if got := Chats(data, Completed); !slices.Equal(got, []state.Place{chat(8), chat(9)}) {
 		t.Fatalf("completions go to %v", got)
 	}
-	if got := KindsOf(data, 42); got != nil {
+	if got := KindsOf(data, chat(42)); got != nil {
 		t.Fatalf("the last chat still gets %v", got)
 	}
+}
+
+// In a group with topics, each topic is a place of its own: by default the
+// topic a master used last gets completions, and topics choose their own
+// kinds apart from the chat's other topics.
+func TestTopicsFollowTheirChoices(t *testing.T) {
+	downloads, alerts := state.Place{Chat: -100, Topic: 5}, state.Place{Chat: -100, Topic: 6}
+	data := &state.Data{LastChat: -100, LastTopic: 5}
+	if got := Chats(data, Completed); !slices.Equal(got, []state.Place{downloads}) {
+		t.Fatalf("by default, completions go to %v", got)
+	}
+	if got := KindsOf(data, state.Place{Chat: -100}); got != nil {
+		t.Fatalf("by default, the chat's General topic gets %v", got)
+	}
+	data.Notify = map[state.Place][]string{
+		alerts: {Errors, Outages}, downloads: {Completed}, {Chat: -100}: {Outages}, {Chat: -200, Topic: 2}: {Outages},
+	}
+	if got := Chats(data, Outages); !slices.Equal(got, []state.Place{{Chat: -200, Topic: 2}, {Chat: -100}, alerts}) {
+		t.Fatalf("outages go to %v", got)
+	}
+	if got := Chats(data, Completed); !slices.Equal(got, []state.Place{downloads}) {
+		t.Fatalf("completions go to %v", got)
+	}
+}
+
+// A notification goes to the topic that chose it, and is sent there again
+// when Telegram did not take it.
+func TestNotificationsGoToTheirTopic(t *testing.T) {
+	wt := newWatcherTest(t, torrent(1, "One", 0.5))
+	downloads := state.Place{Chat: -100, Topic: 5}
+	if err := wt.State.Update(func(data *state.Data) { data.Notify = map[state.Place][]string{downloads: {Completed}} }); err != nil {
+		t.Fatal(err)
+	}
+	wt.step()
+	wt.fail = errors.New("connection reset")
+	wt.transmission.set(func(f *fakeTransmission) { f.torrents[0].PercentDone = 1 })
+	wt.step()
+	wt.fail = nil
+	wt.step()
+	if len(wt.sent) != 1 || wt.sent[0].to != downloads {
+		t.Fatalf("sent %v, want the completion in topic 5", wt.sent)
+	}
+}
+
+// chat is a chat without topics.
+func chat(id int64) state.Place {
+	return state.Place{Chat: id}
 }
 
 // A notification Telegram does not take is sent again at the next check,
@@ -436,7 +483,7 @@ func TestLowDiskSpace(t *testing.T) {
 	if len(wt.sent) != 0 || slices.Contains(wt.transmission.calls, "free") {
 		t.Fatal("free space was checked with no chat wanting it")
 	}
-	if err := wt.State.Update(func(data *state.Data) { data.Notify = map[int64][]string{42: {Disk}} }); err != nil {
+	if err := wt.State.Update(func(data *state.Data) { data.Notify = map[state.Place][]string{chat(42): {Disk}} }); err != nil {
 		t.Fatal(err)
 	}
 	for range 3 {
@@ -508,18 +555,20 @@ func TestTorrentsRemovedWhileAwayAreForgotten(t *testing.T) {
 // and does not hold up the others.
 func TestNotificationsToAnUpgradedGroupDoNotWait(t *testing.T) {
 	wt := newWatcherTest(t, torrent(1, "One", 0.5))
-	if err := wt.State.Update(func(data *state.Data) { data.Notify = map[int64][]string{-4001: {Completed}, 42: {Completed}} }); err != nil {
+	if err := wt.State.Update(func(data *state.Data) {
+		data.Notify = map[state.Place][]string{chat(-4001): {Completed}, chat(42): {Completed}}
+	}); err != nil {
 		t.Fatal(err)
 	}
 	healthy := false
-	wt.Send = func(_ context.Context, chatID int64, text string, _ models.ReplyMarkup) error {
+	wt.Send = func(_ context.Context, to state.Place, text string, _ models.ReplyMarkup) error {
 		switch {
-		case chatID == -4001:
+		case to.Chat == -4001:
 			return &tgbot.MigrateError{Message: "Bad Request: group chat was upgraded to a supergroup chat", MigrateToChatID: -1009}
 		case !healthy:
 			return errors.New("connection reset")
 		}
-		wt.sent = append(wt.sent, sent{chatID, text})
+		wt.sent = append(wt.sent, sent{to, text})
 		return nil
 	}
 	wt.step()
@@ -527,7 +576,7 @@ func TestNotificationsToAnUpgradedGroupDoNotWait(t *testing.T) {
 	wt.step()
 	healthy = true
 	wt.step()
-	if len(wt.sent) != 1 || wt.sent[0].chatID != 42 || len(wt.pending) != 0 {
+	if len(wt.sent) != 1 || wt.sent[0].to != chat(42) || len(wt.pending) != 0 {
 		t.Fatalf("sent %v, pending %d", wt.sent, len(wt.pending))
 	}
 }

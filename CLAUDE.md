@@ -22,7 +22,7 @@ named `transmission-telegram`.
 | `internal/redact` | `URL` and `Error` keep credentials and query tokens out of logged URLs and request errors |
 | `internal/config` | Flags, the config file (`-config`, `file.go`) and the environment (`ParseFlags`: flags win over the file, the file over the environment); `Settings`, which `-install` saves; `MasterSlice` (authorized users); `Version` |
 | `internal/service` | `-install`/`-uninstall`: a systemd unit (Linux), launchd job (macOS), or Windows service that runs `-config FILE`; `Run` runs the bot under the Windows service manager. As root for an account (sudo), files in its home are written through `os.Root` (`writeAccountFile`), never following links out. The Windows service, as LocalSystem, runs a copy of the program in `%ProgramData%\transmission-telegram`, owned by the administrators and private to them and the system (`secureServiceDir`), with its settings, state, and logs. Tests use a fake `host` rooted in a temporary directory |
-| `internal/bot/bot.go` | `Bot`, `New` (startup calls to Telegram, retried, errors with the token masked by `hideToken`), `request`, `reply`, update dispatch (`dispatch`, `serveChat`, `handleUpdate`), panic recovery, `Background` (main's watcher), `SendHTML`/`OpenButton` for the watcher |
+| `internal/bot/bot.go` | `Bot`, `New` (startup calls to Telegram, retried, errors with the token masked by `hideToken`), `request` (`place`, `withArgs`), `reply`, update dispatch (`dispatch`, `serveChat`, `handleUpdate`), panic recovery, `Background` (main's watcher), `SendHTML`/`OpenButton` for the watcher |
 | `internal/bot/buttons.go` | The button router (`handleCallbackQuery`): verbs, v2.x `cmd:` buttons (`legacyPress`), `pressedTorrent`, `editPressed`, `answerCallback` |
 | `internal/bot/card.go` | The torrent card: `cardFields`, `cardKeyboard`, actions (`a:`), removal (`y:`/`n:`), `sendCard`, `torrentFingerprint` |
 | `internal/bot/screens.go` | Paged lists: `listing`, `listPage`, `replyList`, `fitNames`/`shorten`, and the `screenStore` of the last 500 list and question messages (`pg:`, `back`) |
@@ -30,13 +30,14 @@ named `transmission-telegram`.
 | `internal/bot/status.go`, `digest.go` | `/status` (a pinned message updated every minute; `sr` button) and `/digest` (a summary every day, week, or month, its traffic from Transmission's cumulative statistics); both are saved in the state and run in the background from `Start` |
 | `internal/bot/labels.go`, `queue.go`, `turtle.go` | `/labels` and `/setlabel` (RPC 16, Transmission 3.00), `/queue` and `/port`, `/turtle` with its schedule and limits |
 | `internal/bot/commands.go` | `commandTable`: every command's name, aliases, arguments and help; dispatch, `/help` and the Telegram menu are generated from it |
-| `internal/bot/telegram.go` | Sending: HTML helpers (`esc`, `plainText`), UTF-16 lengths, chunking between lines, `fitMessage`, the `.txt` fallback, `retryTelegram`, `edit`; `sendIn` returns the chat a message went to |
+| `internal/bot/telegram.go` | Sending: HTML helpers (`esc`, `plainText`), UTF-16 lengths, chunking between lines, `fitMessage`, the `.txt` fallback, `retryTelegram`, `edit`; `send` and `sendIn` take a `state.Place`, and `sendIn` returns the place a message went to |
 | `internal/bot/migrate.go` | A group that became a supergroup: `followMigration` moves what the bot remembers (`state.Data.MoveChat`) to the new chat, which sending then uses |
+| `internal/bot/topics.go` | Groups with topics: `topicOf` (the topic a message is in, which replies go to), and `forgetGoneTopic`, which drops what was set up in a deleted topic (`state.Data.ForgetTopic`) when sending finds it gone |
 | `internal/bot/format.go` | How torrents look: `torrentLine` (lists), `torrentBlock` (head, tail, active), `torrentCard` (info), icons, sizes, rates |
 | `internal/bot/lists.go`, `info.go`, `session.go`, `settings.go`, `actions.go` | Commands by what they do |
 | `internal/bot/live.go` | Live edits of the head, tail, active, speed and info replies |
-| `internal/notify` | The `Watcher`: checks Transmission every `-watch-interval` and announces completions, outages, new errors and low disk space; `Kinds`, `Chats` and `KindsOf` say which chats get what. `-transmission-logfile` is accepted but ignored |
-| `internal/state` | The state file (`-state`/`TT_STATE`): `Data` is everything the bot remembers (last chat, `/notify` choices, sorts, incomplete torrents, menu, status messages, digests); `Store.Update` saves atomically, 0600 |
+| `internal/notify` | The `Watcher`: checks Transmission every `-watch-interval` and announces completions, outages, new errors and low disk space; `Kinds`, `Chats` and `KindsOf` say which chats and topics (`state.Place`) get what. `-transmission-logfile` is accepted but ignored |
+| `internal/state` | The state file (`-state`/`TT_STATE`): `Data` is everything the bot remembers (last chat and topic, `/notify` choices, sorts, incomplete torrents, menu, status messages, digests); `/notify`, `/status` and `/digest` are kept by `Place`, a chat and topic, written `-100123:45` (`place.go`); a file in which a topic has any of those is saved as format 2, any other as format 1, which 2.2 reads (it ignores `lastTopic`); a deleted topic's entries are removed (`ForgetTopic`); `Store.Update` saves atomically, 0600 |
 | `internal/bot/notify.go`, `sorting.go` | `/notify`; each chat's sort order and `b.torrents` |
 | `internal/logfile` | `-logfile`: a 0600 log file moved aside to `FILE.1` at 10 MiB |
 
@@ -102,8 +103,14 @@ linuxserver's Transmission 4.0.6 and 4.1.3 images, pinned by digest.
   `fitMessage`, and `edit` cuts every edit): a reply in parts cannot be
   edited. Lists, files, and `/deldata`'s question cut long names with
   `fitNames` first, so that every entry shows.
+- In a group with topics, each topic is a place of its own (`state.Place`):
+  replies go to `r.place()` and what a button sends to `p.place()`, and
+  `/notify`, `/status` and `/digest` are kept per place; sort orders and live
+  views stay per chat. A command that hands its work on passes
+  `r.withArgs(...)`, which keeps the topic. Topic 0 is a chat without topics,
+  or its General topic; `topicOf` never gives 1.
 - Messages and edits to a group that became a supergroup follow it
-  (`migrate.go`); code that saves a chat ID after sending uses `sendIn`'s.
+  (`migrate.go`); code that saves a place after sending uses `sendIn`'s.
 - List commands make a `listing` in `b.listing`, which page buttons run again,
   so pages show fresh data; add a new list there and in `TestEveryListCommandHasPages`.
 - Updates go through `dispatch`: the library hands them over one at a time
@@ -180,6 +187,13 @@ linuxserver's Transmission 4.0.6 and 4.1.3 images, pinned by digest.
 - A group upgraded to a supergroup becomes a new chat: requests to the old ID
   fail with 400 and `migrate_to_chat_id`, which go-telegram/bot returns as
   `*MigrateError`.
+- In a group with topics (a forum), a message in a topic has
+  `is_topic_message` and the topic's ID as `message_thread_id`; one in the
+  General topic has neither. Replies in a group without topics carry a
+  `message_thread_id` too, without `is_topic_message`. A message sent without
+  `message_thread_id` goes to General; sending with 1, General's ID, fails
+  with "message thread not found", as sending to a deleted topic does. A
+  closed topic answers `TOPIC_CLOSED` unless the bot can manage topics.
 
 ## Git and releases
 

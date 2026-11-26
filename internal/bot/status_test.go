@@ -40,7 +40,7 @@ func statusBot(t *testing.T) (*Bot, *fakeTelegram, *fakeTransmission) {
 // savedStatus is chat 42's status message, 0 for none.
 func savedStatus(b *Bot) int {
 	var messageID int
-	b.State.Read(func(data *state.Data) { messageID = data.Status[42] })
+	b.State.Read(func(data *state.Data) { messageID = data.Status[at(42)] })
 	return messageID
 }
 
@@ -173,7 +173,7 @@ func TestStatusUpdatesUntilItIsGone(t *testing.T) {
 
 	// A status that ended meanwhile is left alone.
 	edits := ft.callCount("editMessageText")
-	if err := b.updateStatus(ctx, 42, "x"); err != nil || ft.callCount("editMessageText") != edits {
+	if err := b.updateStatus(ctx, at(42), "x"); err != nil || ft.callCount("editMessageText") != edits {
 		t.Fatalf("updating an ended status: %v", err)
 	}
 }
@@ -182,7 +182,7 @@ func TestStatusUpdatesUntilItIsGone(t *testing.T) {
 // date at once.
 func TestStartUpdatesSavedStatus(t *testing.T) {
 	b, ft, _ := statusBot(t)
-	if err := b.State.Update(func(data *state.Data) { data.Status = map[int64]int{42: 7} }); err != nil {
+	if err := b.State.Update(func(data *state.Data) { data.Status = map[state.Place]int{at(42): 7} }); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())

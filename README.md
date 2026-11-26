@@ -15,7 +15,7 @@
 
 - 📋 **Lists and cards**: lists come ten torrents a page, with a button for each torrent that opens its card. A card pauses, resumes, verifies, reannounces, and removes its torrent, with or without its data (asking first), and `/files` skips files or changes their priority.
 - ➕ **Adding**: send magnet links, URLs, or `.torrent` files, and choose their folder and labels, or add them paused.
-- 🔔 **Notifications**: torrents that finish, including those that finished while the bot was down; Transmission going down and coming back; torrent errors; and low disk space. Each chat chooses which it gets.
+- 🔔 **Notifications**: torrents that finish, including those that finished while the bot was down; Transmission going down and coming back; torrent errors; and low disk space. Each chat, or each topic of a group with topics, chooses which it gets.
 - 📊 **Status and digests**: a pinned status message that stays up to date, and a summary every day, week, or month.
 - 🐢 **Speed and order**: global limits, turtle mode and its schedule, the download queue, labels, and moving data to another folder.
 - 🔒 **Careful**: only the users you name may use the bot, secrets stay out of logs and replies, and a button never acts on another torrent than its own.
@@ -155,7 +155,7 @@ The bot watches Transmission over RPC and tells chats about:
 - **errors**: torrents that get a new tracker or local error (not passing tracker warnings), grouped by message.
 - **disk**: free space where Transmission downloads falling below `-low-disk`, once until it recovers.
 
-Send `/notify` in a chat to see what it gets, and `/notify on`, `/notify off`, or `/notify <kind> on|off` to change it. Until any chat chooses, completions and outages go to the chat a master used last, as in earlier versions; the bot remembers that chat across restarts in its state file. Notifications Telegram does not take at first are tried again for a day.
+Send `/notify` in a chat to see what it gets, and `/notify on`, `/notify off`, or `/notify <kind> on|off` to change it. Until any chat chooses, completions and outages go to the chat, or topic, a master used last, as in earlier versions; the bot remembers that chat across restarts in its state file. Notifications Telegram does not take at first are tried again for a day.
 
 ### Status message and digests
 
@@ -166,6 +166,8 @@ Send `/notify` in a chat to see what it gets, and `/notify on`, `/notify off`, o
 ### Groups
 
 Add the bot to a group to use it there; only masters can, and messages from anyone else are ignored. Commands may carry the bot's name, as in `/list@YourBot`, and commands meant for another bot are ignored. With privacy mode on, as BotFather sets it, the bot sees only commands and replies to its messages, so add links with `/add`.
+
+In a group with topics, each topic is like a chat of its own. The bot answers in the topic a command or button came from, and `/notify`, `/status`, and `/digest` apply to the topic they are sent in, so that one topic can get completions and another errors and outages. When a topic is deleted, the bot forgets what was set up in it: its notifications stop, rather than going to another topic, and its digest and status message end. A closed topic refuses the bot's messages unless the bot is an admin that can manage topics.
 
 ---
 
@@ -367,6 +369,11 @@ The image runs as user `1000:1000`, so a directory mounted at `/config` must be 
 Please report vulnerabilities according to [SECURITY.md](SECURITY.md), not in a public issue.
 
 ---
+
+## Upgrading to 2.3.0
+
+- **Groups with topics**: the bot answers in the topic a command or button came from, rather than in the General topic, and `/notify`, `/status`, and `/digest` apply to the topic they are sent in. What was set up before stays in the General topic; send those commands again in the topic you want instead.
+- **State file**: once `/notify`, `/status`, or `/digest` is used in a topic, the bot saves its state file in a new format, which 2.2 refuses to read. To go back to 2.2 then, move the state file aside, which forgets notification choices, status messages, and digests. Until then, the file stays as 2.2 reads it.
 
 ## Upgrading to 2.2.1
 

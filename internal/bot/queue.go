@@ -26,7 +26,7 @@ func (b *Bot) queue(ctx context.Context, r *request) {
 		b.reply(ctx, r, queueUsage)
 		return
 	}
-	torrents, problems, ok := b.torrentsNamed(ctx, &request{chatID: r.chatID, args: r.args[1:]}, "queue")
+	torrents, problems, ok := b.torrentsNamed(ctx, r.withArgs(r.args[1:]), "queue")
 	if !ok {
 		return
 	}
@@ -39,7 +39,7 @@ func (b *Bot) queue(ctx context.Context, r *request) {
 	if len(problems) > 0 {
 		b.reply(ctx, r, summary("", nil, problems))
 	}
-	b.replyList(ctx, &request{chatID: r.chatID, message: r.message}, "queue")
+	b.replyList(ctx, r.withArgs(nil), "queue")
 }
 
 // port asks Transmission whether peers can reach its port, which it checks

@@ -37,11 +37,9 @@ func (b *Bot) followMigration(chat any, err error) (int64, bool) {
 func (b *Bot) migrateChat(from, to int64) {
 	var remembered bool
 	b.State.Read(func(data *state.Data) {
-		_, notify := data.Notify[from]
 		_, sorted := data.Sorts[from]
-		_, digest := data.Digest[from]
-		_, status := data.Status[from]
-		remembered = data.LastChat == from || notify || sorted || digest || status
+		remembered = data.LastChat == from || sorted ||
+			inChat(data.Notify, from) || inChat(data.Digest, from) || inChat(data.Status, from)
 	})
 	if !remembered {
 		return
@@ -51,4 +49,14 @@ func (b *Bot) migrateChat(from, to int64) {
 	if err := b.State.Update(func(data *state.Data) { data.MoveChat(from, to) }); err != nil {
 		b.Logger.Warn("Could not save the move to the new chat", "error", err)
 	}
+}
+
+// inChat reports whether m has an entry for chat, or one of its topics.
+func inChat[V any](m map[state.Place]V, chat int64) bool {
+	for place := range m {
+		if place.Chat == chat {
+			return true
+		}
+	}
+	return false
 }

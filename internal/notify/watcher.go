@@ -83,11 +83,12 @@ type Transmission interface {
 	FreeSpace(ctx context.Context, path string) (freeBytes, totalBytes int64, err error)
 }
 
-// Sender sends an HTML message to a chat, with markup unless it is nil.
-type Sender func(ctx context.Context, chatID int64, text string, markup models.ReplyMarkup) error
+// Sender sends an HTML message to a chat, or a topic of one, with markup
+// unless it is nil.
+type Sender func(ctx context.Context, to state.Place, text string, markup models.ReplyMarkup) error
 
-// Watcher checks Transmission every Interval and tells the chats that want
-// them about what happened. Run it once.
+// Watcher checks Transmission every Interval and tells the chats, and
+// topics, that want them about what happened. Run it once.
 type Watcher struct {
 	Transmission Transmission
 	State        *state.Store
@@ -124,7 +125,7 @@ type Watcher struct {
 
 // pendingMessage is a notification Telegram did not take, to try again.
 type pendingMessage struct {
-	chatID int64
+	to     state.Place
 	text   string
 	markup models.ReplyMarkup
 	since  time.Time
@@ -411,16 +412,16 @@ func (w *Watcher) checkDisk(ctx context.Context, now time.Time) {
 	}
 }
 
-// announce sends text, with markup unless it is nil, to the chats that want
-// notifications of kind, and returns how many there were.
+// announce sends text, with markup unless it is nil, to the chats and
+// topics that want notifications of kind, and returns how many there were.
 func (w *Watcher) announce(ctx context.Context, kind, text string, markup models.ReplyMarkup) int {
-	chats := w.chatsFor(kind)
-	for _, chatID := range chats {
-		if err := w.Send(ctx, chatID, text, markup); err != nil {
-			w.sendFailed(pendingMessage{chatID: chatID, text: text, markup: markup, since: w.clock()}, err)
+	places := w.chatsFor(kind)
+	for _, to := range places {
+		if err := w.Send(ctx, to, text, markup); err != nil {
+			w.sendFailed(pendingMessage{to: to, text: text, markup: markup, since: w.clock()}, err)
 		}
 	}
-	return len(chats)
+	return len(places)
 }
 
 // open is the button that opens t's card, or nil without Open.
@@ -431,21 +432,22 @@ func (w *Watcher) open(t *transmission.Torrent) models.ReplyMarkup {
 	return w.Open(t.ID, t.HashString)
 }
 
-func (w *Watcher) chatsFor(kind string) []int64 {
-	var chats []int64
-	w.State.Read(func(data *state.Data) { chats = Chats(data, kind) })
-	return chats
+func (w *Watcher) chatsFor(kind string) []state.Place {
+	var places []state.Place
+	w.State.Read(func(data *state.Data) { places = Chats(data, kind) })
+	return places
 }
 
 // sendFailed keeps a notification Telegram did not take, unless it refused
 // it for good, to send again at the next check.
 func (w *Watcher) sendFailed(message pendingMessage, err error) {
 	if refused(err) {
-		w.Logger.Warn("Telegram refused a notification", "chat_id", message.chatID, "error", err)
+		w.Logger.Warn("Telegram refused a notification", "chat_id", message.to.Chat, "topic", message.to.Topic, "error", err)
 		return
 	}
 	if len(w.pending) >= maxPending {
-		w.Logger.Warn("Dropping a notification Telegram did not take: too many are waiting", "chat_id", message.chatID)
+		w.Logger.Warn("Dropping a notification Telegram did not take: too many are waiting",
+			"chat_id", message.to.Chat, "topic", message.to.Topic)
 		return
 	}
 	w.pending = append(w.pending, message)
@@ -460,7 +462,7 @@ func (w *Watcher) resendPending(ctx context.Context, now time.Time) {
 		if now.Sub(message.since) > pendingLifetime {
 			continue
 		}
-		if err := w.Send(ctx, message.chatID, message.text, message.markup); err != nil {
+		if err := w.Send(ctx, message.to, message.text, message.markup); err != nil {
 			if refused(err) {
 				continue
 			}
@@ -472,7 +474,8 @@ func (w *Watcher) resendPending(ctx context.Context, now time.Time) {
 }
 
 // refused reports whether Telegram refused a message for good: the chat
-// blocked the bot or is gone, or the message is wrong.
+// blocked the bot or is gone, its topic is gone or closed, or the message
+// is wrong.
 // A group that became a supergroup is refused too: what is sent there
 // never goes through, and waiting would hold up every other notification.
 func refused(err error) bool {
@@ -482,24 +485,24 @@ func refused(err error) bool {
 		errors.As(err, &migrated)
 }
 
-// Chats returns the chats that get notifications of kind: those that chose
-// it with /notify, or, until any chat has chosen, the chat a master used
-// last, for the default kinds.
-func Chats(data *state.Data, kind string) []int64 {
+// Chats returns the chats, and topics, that get notifications of kind:
+// those that chose it with /notify, or, until any has chosen, the chat and
+// topic a master used last, for the default kinds.
+func Chats(data *state.Data, kind string) []state.Place {
 	if len(data.Notify) == 0 {
 		if data.LastChat != 0 && slices.Contains(DefaultKinds, kind) {
-			return []int64{data.LastChat}
+			return []state.Place{data.Last()}
 		}
 		return nil
 	}
-	var chats []int64
-	for chatID, kinds := range data.Notify {
+	var places []state.Place
+	for place, kinds := range data.Notify {
 		if slices.Contains(kinds, kind) {
-			chats = append(chats, chatID)
+			places = append(places, place)
 		}
 	}
-	slices.Sort(chats)
-	return chats
+	slices.SortFunc(places, state.Place.Compare)
+	return places
 }
 
 // Describe says what a kind of notification is about; lowDisk is the
@@ -521,13 +524,13 @@ func Describe(kind string, lowDisk uint64) string {
 	return kind
 }
 
-// KindsOf returns the kinds of notification a chat gets.
-func KindsOf(data *state.Data, chatID int64) []string {
+// KindsOf returns the kinds of notification a chat, or topic, gets.
+func KindsOf(data *state.Data, place state.Place) []string {
 	if len(data.Notify) == 0 {
-		if chatID == data.LastChat {
+		if data.LastChat != 0 && place == data.Last() {
 			return slices.Clone(DefaultKinds)
 		}
 		return nil
 	}
-	return slices.Clone(data.Notify[chatID])
+	return slices.Clone(data.Notify[place])
 }

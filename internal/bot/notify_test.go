@@ -61,11 +61,11 @@ func TestNotifyChoices(t *testing.T) {
 			t.Fatalf("choices = %v, want %v", data.Notify, want)
 		}
 		for chatID, kinds := range want {
-			if !slices.Equal(data.Notify[chatID], kinds) {
-				t.Errorf("chat %d gets %v, want %v", chatID, data.Notify[chatID], kinds)
+			if !slices.Equal(data.Notify[at(chatID)], kinds) {
+				t.Errorf("chat %d gets %v, want %v", chatID, data.Notify[at(chatID)], kinds)
 			}
 		}
-		if got := notify.Chats(data, notify.Errors); !slices.Equal(got, []int64{7, 8}) {
+		if got := notify.Chats(data, notify.Errors); !slices.Equal(got, []state.Place{at(7), at(8)}) {
 			t.Errorf("errors go to %v", got)
 		}
 	})

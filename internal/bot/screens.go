@@ -101,7 +101,7 @@ func (b *Bot) replyList(ctx context.Context, r *request, command string) {
 		return
 	}
 	text, keyboard := listPage(l, 0)
-	messageID, _ := b.send(ctx, r.chatID, text, keyboard)
+	messageID, _ := b.send(ctx, r.place(), text, keyboard)
 	if messageID != 0 {
 		b.rememberScreen(screenKey{r.chatID, messageID}, &screen{command: command, args: r.args})
 	}

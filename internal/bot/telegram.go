@@ -13,6 +13,7 @@ import (
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"github.com/pyed/transmission-telegram/v2/internal/state"
 )
 
 const (
@@ -115,36 +116,39 @@ func chunkMessage(text string) []string {
 	return chunks
 }
 
-// send sends an HTML message, with markup under its last part. A long
-// message goes as several, split between lines, and a very long one as an
-// attached text file. It returns the message's ID, or 0 when the text took
-// more than one message, which is then not to be edited.
-func (b *Bot) send(ctx context.Context, chatID int64, text string, markup models.ReplyMarkup) (int, error) {
-	messageID, _, err := b.sendIn(ctx, chatID, text, markup)
+// send sends an HTML message to a chat, in its topic if to names one, with
+// markup under its last part. A long message goes as several, split
+// between lines, and a very long one as an attached text file. It returns
+// the message's ID, or 0 when the text took more than one message, which
+// is then not to be edited.
+func (b *Bot) send(ctx context.Context, to state.Place, text string, markup models.ReplyMarkup) (int, error) {
+	messageID, _, err := b.sendIn(ctx, to, text, markup)
 	return messageID, err
 }
 
-// sendIn is send, and also returns the chat the message went to: another
-// than chatID when that group became a supergroup, which is a new chat.
+// sendIn is send, and also returns the place the message went to: in
+// another chat than to's when that group became a supergroup, which is a
+// new chat.
 //
 // A message with buttons is always one message, cut short if need be: a
 // reply in several parts cannot be edited, and its buttons would not work.
-func (b *Bot) sendIn(ctx context.Context, chatID int64, text string, markup models.ReplyMarkup) (int, int64, error) {
+func (b *Bot) sendIn(ctx context.Context, to state.Place, text string, markup models.ReplyMarkup) (int, state.Place, error) {
 	if markup != nil {
 		text = fitMessage(text)
 	}
 	chunks := chunkMessage(text)
 	if len(chunks) == 0 {
-		return 0, chatID, errors.New("refusing to send an empty message")
+		return 0, to, errors.New("refusing to send an empty message")
 	}
 	if len(chunks) > maxMessageChunks {
-		chatID, err := b.sendFile(ctx, chatID, plainText(text))
-		return 0, chatID, err
+		to, err := b.sendFile(ctx, to, plainText(text))
+		return 0, to, err
 	}
 	var messageID int
 	for i, chunk := range chunks {
 		params := &tgbot.SendMessageParams{
-			ChatID:             chatID,
+			ChatID:             to.Chat,
+			MessageThreadID:    to.Topic,
 			Text:               chunk,
 			ParseMode:          models.ParseModeHTML,
 			LinkPreviewOptions: noPreview,
@@ -154,29 +158,33 @@ func (b *Bot) sendIn(ctx context.Context, chatID int64, text string, markup mode
 		}
 		message, err := b.sendMessage(ctx, params)
 		if id, ok := params.ChatID.(int64); ok {
-			chatID = id // the chat it went to
+			to.Chat = id // the chat it went to
 		}
 		if err != nil {
-			b.Logger.Error("Sending a message failed", "chat_id", chatID, "error", err)
-			return 0, chatID, err
+			b.Logger.Error("Sending a message failed", "chat_id", to.Chat, "topic", to.Topic, "error", err)
+			return 0, to, err
 		}
 		messageID = message.ID
 	}
 	if len(chunks) > 1 {
-		return 0, chatID, nil
+		return 0, to, nil
 	}
-	return messageID, chatID, nil
+	return messageID, to, nil
 }
 
 // sendMessage sends one message, retrying passing failures, and following
 // a group that became a supergroup to its new chat, which params then
 // names. If Telegram cannot parse its HTML, which only a bug in the bot
-// causes, it goes again as the plain text it was meant to show.
+// causes, it goes again as the plain text it was meant to show. When its
+// topic is gone, what was set up there is forgotten.
 func (b *Bot) sendMessage(ctx context.Context, params *tgbot.SendMessageParams) (*models.Message, error) {
 	message, err := b.sendMessageTo(ctx, params)
 	if to, ok := b.followMigration(params.ChatID, err); ok {
 		params.ChatID = to
 		message, err = b.sendMessageTo(ctx, params)
+	}
+	if chat, ok := params.ChatID.(int64); ok {
+		b.forgetGoneTopic(state.Place{Chat: chat, Topic: params.MessageThreadID}, err)
 	}
 	return message, err
 }
@@ -201,27 +209,29 @@ func (b *Bot) sendMessageTo(ctx context.Context, params *tgbot.SendMessageParams
 }
 
 // sendFile attaches text as a file, for replies too long to read as
-// messages, and returns the chat it went to.
-func (b *Bot) sendFile(ctx context.Context, chatID int64, text string) (int64, error) {
-	attach := func(chatID int64) error {
+// messages, and returns the place it went to.
+func (b *Bot) sendFile(ctx context.Context, to state.Place, text string) (state.Place, error) {
+	attach := func() error {
 		return b.retryTelegram(ctx, func() error {
 			_, err := b.API.SendDocument(ctx, &tgbot.SendDocumentParams{
-				ChatID:   chatID,
-				Document: &models.InputFileUpload{Filename: "transmission-telegram.txt", Data: strings.NewReader(text)},
-				Caption:  "This reply is too long for chat messages, so it is attached as a file.",
+				ChatID:          to.Chat,
+				MessageThreadID: to.Topic,
+				Document:        &models.InputFileUpload{Filename: "transmission-telegram.txt", Data: strings.NewReader(text)},
+				Caption:         "This reply is too long for chat messages, so it is attached as a file.",
 			})
 			return err
 		})
 	}
-	err := attach(chatID)
-	if to, ok := b.followMigration(chatID, err); ok {
-		chatID = to
-		err = attach(chatID)
+	err := attach()
+	if chat, ok := b.followMigration(to.Chat, err); ok {
+		to.Chat = chat
+		err = attach()
 	}
+	b.forgetGoneTopic(to, err)
 	if err != nil {
-		b.Logger.Error("Sending a file failed", "chat_id", chatID, "error", err)
+		b.Logger.Error("Sending a file failed", "chat_id", to.Chat, "topic", to.Topic, "error", err)
 	}
-	return chatID, err
+	return to, err
 }
 
 // fitMessage returns an HTML message cut to fit one Telegram message,

@@ -88,7 +88,7 @@ func TestSendUsesHTMLAndReturnsTheMessageID(t *testing.T) {
 	ft := newFakeTelegram(t)
 	b := newTestBot(t, ft.newBot(t), nil)
 
-	id, err := b.send(context.Background(), 42, "<b>bold</b> &amp; plain", nil)
+	id, err := b.send(context.Background(), at(42), "<b>bold</b> &amp; plain", nil)
 	if err != nil || id == 0 {
 		t.Fatalf("send = %d, %v", id, err)
 	}
@@ -107,7 +107,7 @@ func TestSendAttachesVeryLongRepliesAsAFile(t *testing.T) {
 		lines = append(lines, "<code>1</code> <b>"+esc(strings.Repeat("x", 40))+"</b> &amp; "+strings.Repeat("y", i%7))
 	}
 
-	id, err := b.send(context.Background(), 42, strings.Join(lines, "\n"), nil)
+	id, err := b.send(context.Background(), at(42), strings.Join(lines, "\n"), nil)
 	if err != nil || id != 0 {
 		t.Fatalf("send = %d, %v; want 0 and no error", id, err)
 	}
@@ -130,7 +130,7 @@ func TestSendRetriesPassingFailures(t *testing.T) {
 		`{"ok":false,"error_code":502,"description":"Bad Gateway"}`,
 		`<html>502 Bad Gateway</html>`,
 	)
-	if _, err := b.send(context.Background(), 42, "hello", nil); err != nil {
+	if _, err := b.send(context.Background(), at(42), "hello", nil); err != nil {
 		t.Fatalf("send gave up: %v", err)
 	}
 	if got := ft.callCount("sendMessage"); got != 4 {
@@ -138,7 +138,7 @@ func TestSendRetriesPassingFailures(t *testing.T) {
 	}
 
 	ft.script("sendMessage", `{"ok":false,"error_code":403,"description":"Forbidden: bot was blocked by the user"}`)
-	if _, err := b.send(context.Background(), 42, "hello", nil); err == nil {
+	if _, err := b.send(context.Background(), at(42), "hello", nil); err == nil {
 		t.Fatal("expected the refusal to be returned")
 	}
 	if got := ft.callCount("sendMessage"); got != 5 {
@@ -153,7 +153,7 @@ func TestSendFallsBackToPlainTextOnParseErrors(t *testing.T) {
 	b := newTestBot(t, ft.newBot(t), nil)
 	ft.script("sendMessage", `{"ok":false,"error_code":400,"description":"Bad Request: can't parse entities: unclosed start tag"}`)
 
-	if _, err := b.send(context.Background(), 42, "<b>name &amp; more", nil); err != nil {
+	if _, err := b.send(context.Background(), at(42), "<b>name &amp; more", nil); err != nil {
 		t.Fatalf("send failed: %v", err)
 	}
 	texts, modes := ft.sentTexts(), ft.sentParseModes()
@@ -194,7 +194,7 @@ func TestRepliesWithButtonsAreOneMessage(t *testing.T) {
 	ft := newFakeTelegram(t)
 	b := newTestBot(t, ft.newBot(t), nil)
 	keyboard := &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{{Text: "x", CallbackData: "x"}}}}
-	messageID, err := b.send(context.Background(), 42, strings.Repeat(strings.Repeat("a", 99)+"\n", 100), keyboard)
+	messageID, err := b.send(context.Background(), at(42), strings.Repeat(strings.Repeat("a", 99)+"\n", 100), keyboard)
 	if err != nil || messageID == 0 {
 		t.Fatalf("send = %d, %v", messageID, err)
 	}

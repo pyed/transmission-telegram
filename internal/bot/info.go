@@ -28,7 +28,7 @@ func (b *Bot) info(ctx context.Context, r *request) {
 		case err != nil:
 			b.replyError(ctx, r, "info", err)
 		default:
-			b.sendCard(ctx, r.chatID, t)
+			b.sendCard(ctx, r.place(), t)
 		}
 	}
 }

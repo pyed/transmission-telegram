@@ -39,22 +39,22 @@ func (b *Bot) notify(ctx context.Context, r *request) {
 		return
 	}
 	if change != nil {
-		if err := b.State.Update(func(data *state.Data) { chooseNotifications(data, r.chatID, change) }); err != nil {
+		if err := b.State.Update(func(data *state.Data) { chooseNotifications(data, r.place(), change) }); err != nil {
 			b.Logger.Warn("Could not save notification choices; they last until the bot stops", "error", err)
 		}
 	}
-	b.reply(ctx, r, b.notificationsText(r.chatID))
+	b.reply(ctx, r, b.notificationsText(r.place()))
 }
 
-// chooseNotifications sets the kinds of notification chatID gets. The first
-// chat to choose ends the default, where the chat a master used last gets
-// completions and outages; that chat keeps them.
-func chooseNotifications(data *state.Data, chatID int64, change func([]string) []string) {
-	current := notify.KindsOf(data, chatID)
+// chooseNotifications sets the kinds of notification a chat, or topic,
+// gets. The first to choose ends the default, where the chat and topic a
+// master used last gets completions and outages; that one keeps them.
+func chooseNotifications(data *state.Data, place state.Place, change func([]string) []string) {
+	current := notify.KindsOf(data, place)
 	if len(data.Notify) == 0 {
-		data.Notify = make(map[int64][]string)
-		if data.LastChat != 0 && data.LastChat != chatID {
-			data.Notify[data.LastChat] = slices.Clone(notify.DefaultKinds)
+		data.Notify = make(map[state.Place][]string)
+		if last := data.Last(); data.LastChat != 0 && last != place {
+			data.Notify[last] = slices.Clone(notify.DefaultKinds)
 		}
 	}
 	chosen := change(current)
@@ -64,20 +64,20 @@ func chooseNotifications(data *state.Data, chatID int64, change func([]string) [
 			kinds = append(kinds, kind)
 		}
 	}
-	data.Notify[chatID] = kinds
+	data.Notify[place] = kinds
 }
 
-// notificationsText shows the notifications chatID gets.
-func (b *Bot) notificationsText(chatID int64) string {
+// notificationsText shows the notifications a chat, or topic, gets.
+func (b *Bot) notificationsText(place state.Place) string {
 	var kinds []string
 	var chosen bool
-	var lastChat int64
+	var last state.Place
 	b.State.Read(func(data *state.Data) {
-		kinds = notify.KindsOf(data, chatID)
+		kinds = notify.KindsOf(data, place)
 		chosen = len(data.Notify) > 0
-		lastChat = data.LastChat
+		last = data.Last()
 	})
-	lines := []string{"<b>Notifications in this chat</b>"}
+	lines := []string{"<b>Notifications in this " + placeWord(place) + "</b>"}
 	for _, kind := range notify.Kinds {
 		mark := "⬜"
 		if slices.Contains(kinds, kind) {
@@ -87,10 +87,17 @@ func (b *Bot) notificationsText(chatID int64) string {
 	}
 	if !chosen {
 		where := "another chat"
-		if lastChat == chatID {
+		switch {
+		case last == place:
 			where = "this one"
+		case last.Chat == place.Chat:
+			where = "another topic"
 		}
-		lines = append(lines, "", "No chat has chosen yet, so completions and outages go to the chat a master used last: "+where+".")
+		chat := "chat"
+		if place.Topic != 0 || last.Topic != 0 {
+			chat = "chat, or topic,"
+		}
+		lines = append(lines, "", "No chat has chosen yet, so completions and outages go to the "+chat+" a master used last: "+where+".")
 	}
 	return strings.Join(append(lines, notifyUsage), "\n")
 }

@@ -41,7 +41,7 @@ func digestBot(t *testing.T) (*Bot, *fakeTelegram, *fakeTransmission, *time.Time
 func savedDigest(b *Bot) (state.Digest, bool) {
 	var d state.Digest
 	var ok bool
-	b.State.Read(func(data *state.Data) { d, ok = data.Digest[42] })
+	b.State.Read(func(data *state.Data) { d, ok = data.Digest[at(42)] })
 	return d, ok
 }
 
@@ -247,15 +247,15 @@ func TestDigestWhileTransmissionIsDown(t *testing.T) {
 func TestReplaceDigestKeepsAChange(t *testing.T) {
 	b, _, _, _ := digestBot(t)
 	changed := state.Digest{Time: "10:00"}
-	b.saveDigest(42, &changed)
-	b.replaceDigest(42, state.Digest{Time: "09:00"}, &state.Digest{Time: "09:00", LastDue: "2026-10-21"})
-	b.replaceDigest(42, state.Digest{Time: "09:00"}, nil)
+	b.saveDigest(at(42), &changed)
+	b.replaceDigest(at(42), state.Digest{Time: "09:00"}, &state.Digest{Time: "09:00", LastDue: "2026-10-21"})
+	b.replaceDigest(at(42), state.Digest{Time: "09:00"}, nil)
 	if d, ok := savedDigest(b); !ok || d != changed {
 		t.Fatalf("saved %+v, %v", d, ok)
 	}
-	b.replaceDigest(7, state.Digest{}, &changed)
+	b.replaceDigest(at(7), state.Digest{}, &changed)
 	b.State.Read(func(data *state.Data) {
-		if _, ok := data.Digest[7]; ok {
+		if _, ok := data.Digest[at(7)]; ok {
 			t.Fatal("a digest was made for a chat without one")
 		}
 	})
@@ -271,9 +271,9 @@ func TestDigestNow(t *testing.T) {
 	b.digest(ctx, req("09:00"))
 	b.digest(ctx, req("now"))
 	if err := b.State.Update(func(data *state.Data) {
-		d := data.Digest[42]
+		d := data.Digest[at(42)]
 		d.Uploaded = 99000000000
-		data.Digest[42] = d
+		data.Digest[at(42)] = d
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +343,7 @@ func TestLabelBreakdown(t *testing.T) {
 func TestStartSendsDueDigests(t *testing.T) {
 	b, ft, _, _ := digestBot(t)
 	if err := b.State.Update(func(data *state.Data) {
-		data.Digest = map[int64]state.Digest{42: {Time: "08:00", LastDue: "2026-10-01"}}
+		data.Digest = map[state.Place]state.Digest{at(42): {Time: "08:00", LastDue: "2026-10-01"}}
 	}); err != nil {
 		t.Fatal(err)
 	}

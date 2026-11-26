@@ -9,6 +9,7 @@ import (
 	"github.com/go-telegram/bot/models"
 	"github.com/pyed/transmission"
 	"github.com/pyed/transmission-telegram/v2/internal/redact"
+	"github.com/pyed/transmission-telegram/v2/internal/state"
 )
 
 // cardFields are the torrent fields a card shows.
@@ -80,10 +81,10 @@ func removalKeyboard(t *transmission.Torrent, withData bool) *models.InlineKeybo
 
 // sendCard sends a torrent's card as a new message, with buttons, and keeps
 // it up to date for a while.
-func (b *Bot) sendCard(ctx context.Context, chatID int64, t *transmission.Torrent) {
+func (b *Bot) sendCard(ctx context.Context, to state.Place, t *transmission.Torrent) {
 	keyboard := cardKeyboard(t, false)
-	messageID, _ := b.send(ctx, chatID, torrentCard(t, true), keyboard)
-	b.liveCard(ctx, chatID, messageID, t.ID, keyboard)
+	messageID, to, _ := b.sendIn(ctx, to, torrentCard(t, true), keyboard)
+	b.liveCard(ctx, to.Chat, messageID, t.ID, keyboard)
 }
 
 // liveCard keeps a card up to date.
