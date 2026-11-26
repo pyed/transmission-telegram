@@ -38,9 +38,15 @@ func placeWord(place state.Place) string {
 }
 
 // topicGone reports whether err says the topic a message was sent to does
-// not exist: it was deleted, and with it everything sent there.
+// not exist: it was deleted, and with it everything sent there. The Bot API
+// says "message thread not found"; TOPIC_DELETED is Telegram's own name for
+// it, matched should it ever come through.
 func topicGone(err error) bool {
-	return errors.Is(err, tgbot.ErrorBadRequest) && strings.Contains(strings.ToLower(err.Error()), "message thread not found")
+	if !errors.Is(err, tgbot.ErrorBadRequest) {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "message thread not found") || strings.Contains(text, "topic_deleted")
 }
 
 // forgetGoneTopic forgets what was set up in a topic, when err says the
@@ -52,9 +58,10 @@ func (b *Bot) forgetGoneTopic(to state.Place, err error) {
 	}
 	var remembered bool
 	b.State.Read(func(data *state.Data) {
+		_, notify := data.Notify[to]
 		_, digest := data.Digest[to]
 		_, status := data.Status[to]
-		remembered = len(data.Notify[to]) > 0 || digest || status || data.Last() == to
+		remembered = notify || digest || status || data.Last() == to
 	})
 	if !remembered {
 		return

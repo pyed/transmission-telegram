@@ -197,8 +197,9 @@ func TestPlaceText(t *testing.T) {
 	}
 }
 
-// A state that remembers no topic is saved as format 1, which older
-// versions read; one that remembers a topic as format 2, which they refuse
+// A state with no topic's notifications, status, or digest is saved as
+// format 1, which older versions read, even when the last place a master
+// used is a topic; one with them as format 2, which older versions refuse
 // rather than misread. This version reads both.
 func TestStateFormat(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.json")
@@ -241,7 +242,6 @@ func TestStateFormat(t *testing.T) {
 		"notifications": func(data *Data) { data.Notify[Place{Chat: -100123, Topic: 45}] = []string{"errors"} },
 		"status":        func(data *Data) { data.Status[Place{Chat: -100123, Topic: 45}] = 9 },
 		"digest":        func(data *Data) { data.Digest[Place{Chat: -100123, Topic: 45}] = Digest{Time: "09:00"} },
-		"last chat":     func(data *Data) { data.LastTopic = 45 },
 	} {
 		if err := store.Update(change); err != nil {
 			t.Fatal(err)
@@ -263,13 +263,19 @@ func TestStateFormat(t *testing.T) {
 			delete(data.Notify, Place{Chat: -100123, Topic: 45})
 			delete(data.Status, Place{Chat: -100123, Topic: 45})
 			delete(data.Digest, Place{Chat: -100123, Topic: 45})
-			data.LastTopic = 0
 		}); err != nil {
 			t.Fatal(err)
 		}
 		if file := saved(); file["version"] != 1.0 {
 			t.Errorf("without the topic's %s again, the state is saved as format %v", name, file["version"])
 		}
+	}
+
+	if err := store.Update(func(data *Data) { data.LastTopic = 45 }); err != nil {
+		t.Fatal(err)
+	}
+	if file := saved(); file["version"] != 1.0 || file["lastTopic"] != 45.0 {
+		t.Errorf("with only the last place in a topic, the state is saved as %v", file)
 	}
 
 	if err := os.WriteFile(path, []byte(`{"version": 1, "notify": {"-100123:x": []}}`), 0o600); err != nil {
@@ -280,7 +286,7 @@ func TestStateFormat(t *testing.T) {
 	}
 }
 
-// A topic that is gone gets no notifications, which go nowhere else, and
+// A topic that is gone is forgotten: its notifications go nowhere else, and
 // its digest and status end; the chat's other places keep theirs.
 func TestForgetTopic(t *testing.T) {
 	gone, other, general := Place{Chat: -100, Topic: 5}, Place{Chat: -100, Topic: 6}, Place{Chat: -100}
@@ -293,8 +299,8 @@ func TestForgetTopic(t *testing.T) {
 	if !data.ForgetTopic(gone) {
 		t.Fatal("ForgetTopic reported no change")
 	}
-	if kinds, ok := data.Notify[gone]; !ok || len(kinds) != 0 {
-		t.Errorf("the topic that is gone gets %v, %v; want none", kinds, ok)
+	if kinds, ok := data.Notify[gone]; ok {
+		t.Errorf("the topic that is gone still chose %v", kinds)
 	}
 	if len(data.Notify[other]) != 1 || len(data.Notify[general]) != 1 || len(data.Digest) != 1 || data.Digest[general].Time != "09:00" ||
 		len(data.Status) != 1 || data.Status[other] != 4 || data.Last() != (Place{}) {
@@ -307,11 +313,15 @@ func TestForgetTopic(t *testing.T) {
 		t.Error("a chat itself was forgotten as a topic")
 	}
 
-	// The only topic to choose keeps its choice, with no kinds, so that
-	// the default does not send its notifications elsewhere.
-	alone := Data{Notify: map[Place][]string{gone: {"completed"}}}
+	// When the only place to choose was the topic, its chat is kept as
+	// having chosen none, so that the default does not send the topic's
+	// notifications elsewhere; and the state no longer needs format 2.
+	alone := Data{LastChat: -100, Notify: map[Place][]string{gone: {"completed"}}}
 	alone.ForgetTopic(gone)
-	if len(alone.Notify) != 1 {
-		t.Errorf("after the only topic is gone, the choices are %v", alone.Notify)
+	if want := map[Place][]string{general: {}}; !maps.EqualFunc(alone.Notify, want, slices.Equal) {
+		t.Errorf("after the only topic is gone, the choices are %v, want %v", alone.Notify, want)
+	}
+	if alone.format() != 1 {
+		t.Errorf("after the only topic is gone, the state needs format %d", alone.format())
 	}
 }

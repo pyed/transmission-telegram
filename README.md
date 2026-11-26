@@ -373,7 +373,7 @@ Please report vulnerabilities according to [SECURITY.md](SECURITY.md), not in a 
 ## Upgrading to 2.3.0
 
 - **Groups with topics**: the bot answers in the topic a command or button came from, rather than in the General topic, and `/notify`, `/status`, and `/digest` apply to the topic they are sent in. What was set up before stays in the General topic; send those commands again in the topic you want instead.
-- **State file**: once the bot remembers a topic, it saves its state file in a new format, which 2.2 refuses to read. To go back to 2.2 then, move the state file aside, which forgets notification choices, status messages, and digests. A state file without topics stays as 2.2 reads it.
+- **State file**: once `/notify`, `/status`, or `/digest` is used in a topic, the bot saves its state file in a new format, which 2.2 refuses to read. To go back to 2.2 then, move the state file aside, which forgets notification choices, status messages, and digests. Until then, the file stays as 2.2 reads it.
 
 ## Upgrading to 2.2.1
 

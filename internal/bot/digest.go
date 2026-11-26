@@ -204,9 +204,12 @@ func (b *Bot) checkDigest(ctx context.Context) {
 			d.LastDue, d.Since = due, now.Unix()
 			d.Uploaded, d.Downloaded = stats.CumulativeStats.UploadedBytes, stats.CumulativeStats.DownloadedBytes
 		case chatGone(err):
-			// A topic that is gone was forgotten as the digest was sent.
 			b.Logger.Info("Stopped the digest of a chat the bot can no longer post in", "chat_id", place.Chat, "error", err)
 			b.replaceDigest(place, was, nil)
+			continue
+		case topicGone(err):
+			// Sending forgot the topic, and its digest with it.
+			b.Logger.Info("Stopped the digest of a topic that is gone", "chat_id", place.Chat, "topic", place.Topic)
 			continue
 		case errors.Is(err, tgbot.ErrorBadRequest):
 			// Telegram would refuse it again. The next digest covers this

@@ -21,8 +21,9 @@ import (
 // is refused rather than misread.
 //
 // Format 2 names places in topics ("-100123:45") as format 1 cannot. A
-// state that remembers no topic is saved as format 1, which is the same
-// but for that, so that an older version can still read it.
+// state with no such place is saved as format 1, which is the same but for
+// that, so that an older version can still read it; that version ignores
+// lastTopic, and sends to the chat itself instead.
 const version = 2
 
 // Data is everything the bot remembers across restarts.
@@ -64,10 +65,11 @@ func (d *Data) SetLast(p Place) {
 	d.LastChat, d.LastTopic = p.Chat, p.Topic
 }
 
-// format is the oldest format that holds d: 2 when it remembers a topic.
+// format is the oldest format that holds d: 2 when a topic has
+// notifications, a status message, or a digest.
 func (d *Data) format() int {
 	inTopic := func(p Place) bool { return p.Topic != 0 }
-	if d.LastTopic != 0 || anyKey(d.Notify, inTopic) || anyKey(d.Status, inTopic) || anyKey(d.Digest, inTopic) {
+	if anyKey(d.Notify, inTopic) || anyKey(d.Status, inTopic) || anyKey(d.Digest, inTopic) {
 		return 2
 	}
 	return 1
@@ -274,10 +276,16 @@ func (d *Data) ForgetTopic(p Place) bool {
 		return false
 	}
 	changed := false
-	if kinds, ok := d.Notify[p]; ok && len(kinds) > 0 {
-		// Kept, with no kinds, so that notifications do not go back to
-		// the chat a master used last, as they do until any place chooses.
-		d.Notify[p], changed = []string{}, true
+	if _, ok := d.Notify[p]; ok {
+		delete(d.Notify, p)
+		if len(d.Notify) == 0 {
+			// Notifications must not go back to the chat a master used
+			// last, as they do until any place chooses: the chat itself is
+			// kept as having chosen none, as every place that has not
+			// chosen gets.
+			d.Notify[Place{Chat: p.Chat}] = []string{}
+		}
+		changed = true
 	}
 	if _, ok := d.Digest[p]; ok {
 		delete(d.Digest, p)

@@ -37,7 +37,7 @@ named `transmission-telegram`.
 | `internal/bot/lists.go`, `info.go`, `session.go`, `settings.go`, `actions.go` | Commands by what they do |
 | `internal/bot/live.go` | Live edits of the head, tail, active, speed and info replies |
 | `internal/notify` | The `Watcher`: checks Transmission every `-watch-interval` and announces completions, outages, new errors and low disk space; `Kinds`, `Chats` and `KindsOf` say which chats and topics (`state.Place`) get what. `-transmission-logfile` is accepted but ignored |
-| `internal/state` | The state file (`-state`/`TT_STATE`): `Data` is everything the bot remembers (last chat and topic, `/notify` choices, sorts, incomplete torrents, menu, status messages, digests); `/notify`, `/status` and `/digest` are kept by `Place`, a chat and topic, written `-100123:45` (`place.go`); a file that remembers a topic is saved as format 2, one that does not as format 1, which 2.2 reads; `Store.Update` saves atomically, 0600 |
+| `internal/state` | The state file (`-state`/`TT_STATE`): `Data` is everything the bot remembers (last chat and topic, `/notify` choices, sorts, incomplete torrents, menu, status messages, digests); `/notify`, `/status` and `/digest` are kept by `Place`, a chat and topic, written `-100123:45` (`place.go`); a file in which a topic has any of those is saved as format 2, any other as format 1, which 2.2 reads (it ignores `lastTopic`); a deleted topic's entries are removed (`ForgetTopic`); `Store.Update` saves atomically, 0600 |
 | `internal/bot/notify.go`, `sorting.go` | `/notify`; each chat's sort order and `b.torrents` |
 | `internal/logfile` | `-logfile`: a 0600 log file moved aside to `FILE.1` at 10 MiB |
 

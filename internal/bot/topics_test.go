@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"log/slog"
 	"maps"
 	"slices"
 	"strings"
@@ -264,7 +265,7 @@ func TestAGoneTopicIsForgotten(t *testing.T) {
 		t.Fatalf("%d messages were sent, %q delivered; want none, anywhere else", calls, ft.sentTexts())
 	}
 	b.State.Read(func(data *state.Data) {
-		if kinds, ok := data.Notify[gone]; !ok || len(kinds) != 0 || len(data.Notify[other]) != 1 || len(data.Notify[third]) != 1 {
+		if _, ok := data.Notify[gone]; ok || len(data.Notify[other]) != 1 || len(data.Notify[third]) != 1 {
 			t.Errorf("notifications after the topic is gone = %v", data.Notify)
 		}
 		if got := notify.Chats(data, notify.Completed); got != nil {
@@ -276,24 +277,51 @@ func TestAGoneTopicIsForgotten(t *testing.T) {
 	})
 
 	// A digest due in a topic that is gone ends, with what else was set
-	// up there.
+	// up there, and the log says why.
+	var logs strings.Builder
+	b.Logger = slog.New(slog.NewTextHandler(&logs, nil))
 	ft.script("sendMessage", threadNotFound)
 	b.checkDigest(ctx)
 	b.State.Read(func(data *state.Data) {
-		if kinds := data.Notify[other]; len(data.Digest) != 0 || len(kinds) != 0 {
-			t.Errorf("after the other topic is gone, digests = %v, its notifications %v", data.Digest, kinds)
+		if _, ok := data.Notify[other]; ok || len(data.Digest) != 0 {
+			t.Errorf("after the other topic is gone, digests = %v, notifications %v", data.Digest, data.Notify)
 		}
 	})
+	if text := logs.String(); !strings.Contains(text, "Stopped the digest of a topic that is gone") || strings.Contains(text, "refused a digest") {
+		t.Errorf("the log of a digest whose topic is gone:\n%s", text)
+	}
 
-	// So does a topic's choice of notifications, all it had, when a reply
-	// too long for messages finds it gone.
+	// So do the notifications of a topic that had nothing else, when a
+	// reply too long for messages finds it gone. It was the last place to
+	// choose, so its chat is kept as having chosen none, rather than
+	// notifications going back to the default.
 	ft.script("sendDocument", threadNotFound)
 	if _, err := b.send(ctx, third, strings.Repeat(strings.Repeat("a", 99)+"\n", 200), nil); err == nil {
 		t.Fatal("a file to a deleted topic went through")
 	}
 	b.State.Read(func(data *state.Data) {
-		if kinds, ok := data.Notify[third]; !ok || len(kinds) != 0 {
-			t.Errorf("notifications after the third topic is gone = %v", data.Notify)
+		if want := map[state.Place][]string{at(-100): {}}; !maps.EqualFunc(data.Notify, want, slices.Equal) {
+			t.Errorf("notifications after the third topic is gone = %v, want %v", data.Notify, want)
 		}
 	})
+}
+
+// A deleted topic is told apart from other refusals, as the Bot API words
+// it and as Telegram itself names it.
+func TestTopicGone(t *testing.T) {
+	for text, want := range map[string]bool{
+		threadNotFound: true,
+		`{"ok":false,"error_code":400,"description":"Bad Request: TOPIC_DELETED"}`:                         true,
+		`{"ok":false,"error_code":400,"description":"Bad Request: TOPIC_CLOSED"}`:                          false,
+		`{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`:                        false,
+		`{"ok":false,"error_code":403,"description":"Forbidden: bot was kicked from the supergroup chat"}`: false,
+	} {
+		ft := newFakeTelegram(t)
+		b := newTestBot(t, ft.newBot(t), nil)
+		ft.script("sendMessage", text)
+		_, err := b.send(context.Background(), state.Place{Chat: -100, Topic: 5}, "x", nil)
+		if err == nil || topicGone(err) != want {
+			t.Errorf("%s: topicGone(%v) = %v, want %v", text, err, err != nil && topicGone(err), want)
+		}
+	}
 }
