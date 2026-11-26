@@ -17,8 +17,8 @@ import (
 
 // A status message is one the bot pins in a chat and keeps up to date:
 // speeds and limits, what Transmission transferred this session, torrents
-// at work, and free space. The chats' status messages are saved in the
-// state, so they stay up to date after a restart.
+// at work, and free space. A chat, or each topic of one, has one. They are
+// saved in the state, so they stay up to date after a restart.
 
 // statusInterval is how often status messages are brought up to date.
 const statusInterval = time.Minute
@@ -40,13 +40,13 @@ func (b *Bot) timeNow() time.Time {
 }
 
 // status answers /status with a status message, pinned, in place of the
-// chat's earlier one; /status off ends it.
+// chat's or topic's earlier one; /status off ends it.
 func (b *Bot) status(ctx context.Context, r *request) {
 	switch strings.ToLower(strings.Join(r.args, " ")) {
 	case "":
 	case "off":
-		if !b.stopStatus(ctx, r.chatID, statusEndedNote) {
-			b.reply(ctx, r, "<b>status:</b> this chat has no status message")
+		if !b.stopStatus(ctx, r.place(), statusEndedNote) {
+			b.reply(ctx, r, "<b>status:</b> this "+placeWord(r.place())+" has no status message")
 			return
 		}
 		b.reply(ctx, r, "The status message is no longer updated or pinned.")
@@ -57,43 +57,45 @@ func (b *Bot) status(ctx context.Context, r *request) {
 	}
 	b.statusMu.Lock()
 	defer b.statusMu.Unlock()
-	b.stopStatusLocked(ctx, r.chatID, "📊 This status moved to a newer message.")
-	messageID, chatID, err := b.sendIn(ctx, r.chatID, b.renderStatus(ctx), statusKeyboard())
+	b.stopStatusLocked(ctx, r.place(), "📊 This status moved to a newer message.")
+	messageID, place, err := b.sendIn(ctx, r.place(), b.renderStatus(ctx), statusKeyboard())
 	if err != nil || messageID == 0 {
 		return
 	}
 	if err := b.State.Update(func(data *state.Data) {
 		if data.Status == nil {
-			data.Status = make(map[int64]int)
+			data.Status = make(map[state.Place]int)
 		}
-		data.Status[chatID] = messageID
+		data.Status[place] = messageID
 	}); err != nil {
 		b.Logger.Warn("Could not save the status message; it stays up to date until the bot stops", "error", err)
 	}
+	// In a topic, the message is pinned there.
 	err = b.retryTelegram(ctx, func() error {
-		_, err := b.API.PinChatMessage(ctx, &tgbot.PinChatMessageParams{ChatID: chatID, MessageID: messageID, DisableNotification: true})
+		_, err := b.API.PinChatMessage(ctx, &tgbot.PinChatMessageParams{ChatID: place.Chat, MessageID: messageID, DisableNotification: true})
 		return err
 	})
 	if err != nil {
-		b.reply(ctx, &request{chatID: chatID}, "<b>status:</b> it stays up to date, but could not be pinned: "+esc(redact.Error(err))+
-			". In a group, the bot needs the right to pin messages.")
+		b.reply(ctx, &request{chatID: place.Chat, topic: place.Topic}, "<b>status:</b> it stays up to date, but could not be pinned: "+
+			esc(redact.Error(err))+". In a group, the bot needs the right to pin messages.")
 	}
 }
 
-// stopStatus ends a chat's status message, if it has one: it is unpinned
-// and left saying note. It reports whether there was one.
-func (b *Bot) stopStatus(ctx context.Context, chatID int64, note string) bool {
+// stopStatus ends a chat's or topic's status message, if it has one: it is
+// unpinned and left saying note. It reports whether there was one.
+func (b *Bot) stopStatus(ctx context.Context, place state.Place, note string) bool {
 	b.statusMu.Lock()
 	defer b.statusMu.Unlock()
-	return b.stopStatusLocked(ctx, chatID, note)
+	return b.stopStatusLocked(ctx, place, note)
 }
 
-func (b *Bot) stopStatusLocked(ctx context.Context, chatID int64, note string) bool {
+func (b *Bot) stopStatusLocked(ctx context.Context, place state.Place, note string) bool {
+	chatID := place.Chat
 	var messageID int
 	var ok bool
 	if err := b.State.Update(func(data *state.Data) {
-		messageID, ok = data.Status[chatID]
-		delete(data.Status, chatID)
+		messageID, ok = data.Status[place]
+		delete(data.Status, place)
 	}); err != nil {
 		b.Logger.Warn("Could not save the status message", "error", err)
 	}
@@ -129,41 +131,41 @@ func (b *Bot) watchStatus(ctx context.Context) {
 	}
 }
 
-// checkStatus brings every chat's status message up to date. With none, it
-// asks Transmission nothing.
+// checkStatus brings every status message up to date. With none, it asks
+// Transmission nothing.
 func (b *Bot) checkStatus(ctx context.Context) {
-	var chats []int64
-	b.State.Read(func(data *state.Data) { chats = slices.Sorted(maps.Keys(data.Status)) })
-	if len(chats) == 0 {
+	var places []state.Place
+	b.State.Read(func(data *state.Data) { places = slices.SortedFunc(maps.Keys(data.Status), state.Place.Compare) })
+	if len(places) == 0 {
 		return
 	}
 	text := b.renderStatus(ctx)
-	for _, chatID := range chats {
-		b.updateStatus(ctx, chatID, text) // logs its own failure
+	for _, place := range places {
+		b.updateStatus(ctx, place, text) // logs its own failure
 	}
 }
 
-// updateStatus shows text in a chat's status message, if it still has one.
-// When the message is gone, or the bot can no longer post in the chat, the
-// chat's status ends.
-func (b *Bot) updateStatus(ctx context.Context, chatID int64, text string) error {
+// updateStatus shows text in a chat's or topic's status message, if it
+// still has one. When the message is gone, or the bot can no longer post in
+// the chat, the status ends.
+func (b *Bot) updateStatus(ctx context.Context, place state.Place, text string) error {
 	b.statusMu.Lock()
 	defer b.statusMu.Unlock()
 	var messageID int
-	b.State.Read(func(data *state.Data) { messageID = data.Status[chatID] })
+	b.State.Read(func(data *state.Data) { messageID = data.Status[place] })
 	if messageID == 0 {
 		return nil
 	}
-	err := b.edit(ctx, chatID, messageID, text, statusKeyboard())
+	err := b.edit(ctx, place.Chat, messageID, text, statusKeyboard())
 	switch {
 	case err == nil:
 	case statusGone(err):
-		b.Logger.Info("Stopped updating a status message that is gone", "chat_id", chatID, "error", err)
-		if saveErr := b.State.Update(func(data *state.Data) { delete(data.Status, chatID) }); saveErr != nil {
+		b.Logger.Info("Stopped updating a status message that is gone", "chat_id", place.Chat, "topic", place.Topic, "error", err)
+		if saveErr := b.State.Update(func(data *state.Data) { delete(data.Status, place) }); saveErr != nil {
 			b.Logger.Warn("Could not save the status message", "error", saveErr)
 		}
 	default:
-		b.Logger.Warn("Could not update the status message", "chat_id", chatID, "error", err)
+		b.Logger.Warn("Could not update the status message", "chat_id", place.Chat, "topic", place.Topic, "error", err)
 	}
 	return err
 }
@@ -178,13 +180,22 @@ func statusGone(err error) bool {
 
 // refreshStatus brings a status message up to date at once: sr.
 func (b *Bot) refreshStatus(ctx context.Context, p *press) {
-	var messageID int
-	b.State.Read(func(data *state.Data) { messageID = data.Status[p.chatID] })
-	if messageID == 0 || messageID != p.messageID {
+	var place state.Place
+	var found bool
+	// Found by its ID, which is all Telegram tells of a message that is
+	// too old to show the bot.
+	b.State.Read(func(data *state.Data) {
+		for where, messageID := range data.Status {
+			if where.Chat == p.chatID && messageID == p.messageID {
+				place, found = where, true
+			}
+		}
+	})
+	if !found {
 		b.answerCallback(ctx, p.query.ID, statusEndedNote, true)
 		return
 	}
-	if err := b.updateStatus(ctx, p.chatID, b.renderStatus(ctx)); err != nil {
+	if err := b.updateStatus(ctx, place, b.renderStatus(ctx)); err != nil {
 		b.answerCallback(ctx, p.query.ID, "Could not update it: "+redact.Error(err), true)
 		return
 	}

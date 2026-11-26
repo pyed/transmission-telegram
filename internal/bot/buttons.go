@@ -10,16 +10,28 @@ import (
 	"github.com/go-telegram/bot/models"
 	"github.com/pyed/transmission"
 	"github.com/pyed/transmission-telegram/v2/internal/redact"
+	"github.com/pyed/transmission-telegram/v2/internal/state"
 )
 
-// press is a button press: the query, the message the button is under, and
-// its callback data, split at colons into a verb and its arguments.
+// press is a button press: the query, the message the button is under and
+// its topic, and its callback data, split at colons into a verb and its
+// arguments.
 type press struct {
 	query     *models.CallbackQuery
 	chatID    int64
 	messageID int
-	verb      string
-	args      []string
+	// topic is the forum topic of the pressed message, where what the
+	// press sends goes; 0 outside topics, and when Telegram no longer
+	// shows the bot the message.
+	topic int
+	verb  string
+	args  []string
+}
+
+// place is where what the press sends goes: the pressed message's chat and
+// topic.
+func (p *press) place() state.Place {
+	return state.Place{Chat: p.chatID, Topic: p.topic}
 }
 
 func newPress(cb *models.CallbackQuery) *press {
@@ -27,6 +39,7 @@ func newPress(cb *models.CallbackQuery) *press {
 	switch {
 	case cb.Message.Message != nil:
 		p.chatID, p.messageID = cb.Message.Message.Chat.ID, cb.Message.Message.ID
+		p.topic = topicOf(cb.Message.Message)
 	case cb.Message.InaccessibleMessage != nil:
 		p.chatID, p.messageID = cb.Message.InaccessibleMessage.Chat.ID, cb.Message.InaccessibleMessage.MessageID
 	}
@@ -133,7 +146,7 @@ func (b *Bot) openCard(ctx context.Context, p *press) {
 		b.editPressed(ctx, p, torrentCard(t, false), cardKeyboard(t, true))
 		return
 	}
-	b.sendCard(ctx, p.chatID, t)
+	b.sendCard(ctx, p.place(), t)
 }
 
 // pressedTorrent finds the torrent a button names. When it is gone, or its

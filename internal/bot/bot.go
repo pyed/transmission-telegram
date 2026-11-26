@@ -68,22 +68,38 @@ type Bot struct {
 // chatQueueSize is how many updates of one chat may wait for its handler.
 const chatQueueSize = 64
 
-// request is a command to carry out: the chat it came from, its arguments,
-// and the message that carried it.
+// request is a command to carry out: the chat, and topic, it came from,
+// its arguments, and the message that carried it.
 type request struct {
-	chatID  int64
+	chatID int64
+	// topic is the forum topic the command came from (topicOf), where its
+	// replies go; 0 outside topics.
+	topic   int
 	args    []string
 	message *models.Message
+}
+
+// place is where the request's replies go: its chat and topic.
+func (r *request) place() state.Place {
+	return state.Place{Chat: r.chatID, Topic: r.topic}
+}
+
+// withArgs is the request with other arguments, as when a command hands
+// part of its work to another.
+func (r *request) withArgs(args []string) *request {
+	sub := *r
+	sub.args = args
+	return &sub
 }
 
 // commandFunc is the handler signature for bot commands.
 type commandFunc func(ctx context.Context, r *request)
 
-// reply sends an HTML reply to the request's chat. It returns the
-// message's ID, or 0 when the reply was not one message; failures are
-// logged.
+// reply sends an HTML reply to the request's chat, in its topic. It
+// returns the message's ID, or 0 when the reply was not one message;
+// failures are logged.
 func (b *Bot) reply(ctx context.Context, r *request, text string) int {
-	messageID, _ := b.send(ctx, r.chatID, text, nil)
+	messageID, _ := b.send(ctx, r.place(), text, nil)
 	return messageID
 }
 
@@ -93,10 +109,11 @@ func (b *Bot) replyError(ctx context.Context, r *request, command string, err er
 	b.reply(ctx, r, "<b>"+esc(command)+":</b> "+esc(redact.Error(err)))
 }
 
-// SendHTML sends an HTML message to a chat, with markup unless it is nil,
-// retrying passing failures; the notification watcher uses it.
-func (b *Bot) SendHTML(ctx context.Context, chatID int64, text string, markup models.ReplyMarkup) error {
-	_, err := b.send(ctx, chatID, text, markup)
+// SendHTML sends an HTML message to a chat, or a topic of one, with markup
+// unless it is nil, retrying passing failures; the notification watcher
+// uses it.
+func (b *Bot) SendHTML(ctx context.Context, to state.Place, text string, markup models.ReplyMarkup) error {
+	_, err := b.send(ctx, to, text, markup)
 	return err
 }
 
@@ -294,7 +311,7 @@ func (b *Bot) serveUpdate(ctx context.Context, update *models.Update) {
 	if update.Message != nil {
 		handled := make(chan struct{})
 		defer close(handled)
-		chatID := update.Message.Chat.ID
+		chatID, topic := update.Message.Chat.ID, topicOf(update.Message)
 		b.launch(ctx, "typing indicator", func(ctx context.Context) {
 			delay := b.typingDelay
 			if delay <= 0 {
@@ -306,7 +323,9 @@ func (b *Bot) serveUpdate(ctx context.Context, update *models.Update) {
 			case <-handled:
 			case <-ctx.Done():
 			case <-timer.C:
-				_, _ = b.API.SendChatAction(ctx, &tgbot.SendChatActionParams{ChatID: chatID, Action: models.ChatActionTyping})
+				_, _ = b.API.SendChatAction(ctx, &tgbot.SendChatActionParams{
+					ChatID: chatID, MessageThreadID: topic, Action: models.ChatActionTyping,
+				})
 			}
 		})
 	}
@@ -412,7 +431,7 @@ func (b *Bot) handleUpdate(ctx context.Context, _ *tgbot.Bot, update *models.Upd
 			"chat_id", update.Message.Chat.ID,
 		)
 		if b.Config.Masters.Setup() && userID > 0 && b.firstSetupReply(userID) {
-			b.reply(ctx, &request{chatID: update.Message.Chat.ID}, fmt.Sprintf(
+			b.reply(ctx, &request{chatID: update.Message.Chat.ID, topic: topicOf(update.Message)}, fmt.Sprintf(
 				"Your Telegram user ID is <code>%d</code>. To let this account use the bot, start it with "+
 					"<code>-master=%d</code> or <code>TT_MASTERS=%d</code> instead of the placeholder 1.", userID, userID, userID))
 		}
@@ -429,17 +448,18 @@ func (b *Bot) handleUpdate(ctx context.Context, _ *tgbot.Bot, update *models.Upd
 		}
 	}
 
-	b.rememberChat(update.Message.Chat.ID)
+	r := &request{chatID: update.Message.Chat.ID, topic: topicOf(update.Message), message: update.Message}
+	b.rememberChat(r.place())
 
 	b.Logger.Info("Received message",
 		"sender", username,
 		"user_id", userID,
 		"chat_id", update.Message.Chat.ID,
+		"topic", r.topic,
 		"message_id", update.Message.ID,
 		"has_document", update.Message.Document != nil,
 	)
 
-	r := &request{chatID: update.Message.Chat.ID, message: update.Message}
 	if len(fields) == 0 {
 		if update.Message.Document != nil {
 			b.receiveTorrent(ctx, r)
@@ -499,16 +519,16 @@ func (b *Bot) firstSetupReply(userID int64) bool {
 	return true
 }
 
-// rememberChat records the chat a master used last, where notifications go
-// until a chat chooses its own. It is saved, so a restart does not lose it;
-// it is written only when it changes.
-func (b *Bot) rememberChat(chatID int64) {
+// rememberChat records the chat, and topic, a master used last, where
+// notifications go until a chat or topic chooses its own. It is saved, so a
+// restart does not lose it; it is written only when it changes.
+func (b *Bot) rememberChat(place state.Place) {
 	var changed bool
-	b.State.Read(func(data *state.Data) { changed = data.LastChat != chatID })
+	b.State.Read(func(data *state.Data) { changed = data.Last() != place })
 	if !changed {
 		return
 	}
-	if err := b.State.Update(func(data *state.Data) { data.LastChat = chatID }); err != nil {
+	if err := b.State.Update(func(data *state.Data) { data.SetLast(place) }); err != nil {
 		b.Logger.Warn("Could not save the chat notifications go to", "error", err)
 	}
 }

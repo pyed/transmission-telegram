@@ -113,7 +113,7 @@ func (b *Bot) setlabel(ctx context.Context, r *request) {
 	if !b.labelsSupported(ctx, r, "setlabel") {
 		return
 	}
-	torrents, problems, ok := b.torrentsNamed(ctx, &request{chatID: r.chatID, args: r.args[:ids]}, "setlabel")
+	torrents, problems, ok := b.torrentsNamed(ctx, r.withArgs(r.args[:ids]), "setlabel")
 	if !ok {
 		return
 	}

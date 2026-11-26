@@ -248,7 +248,7 @@ func (b *Bot) del(ctx context.Context, r *request) {
 // it; "confirm" as the last argument deletes at once, for scripts.
 func (b *Bot) deldata(ctx context.Context, r *request) {
 	if n := len(r.args); n > 0 && strings.EqualFold(r.args[n-1], "confirm") {
-		b.remove(ctx, &request{chatID: r.chatID, message: r.message, args: r.args[:n-1]}, "deldata", true)
+		b.remove(ctx, r.withArgs(r.args[:n-1]), "deldata", true)
 		return
 	}
 	if len(r.args) == 0 {
@@ -270,7 +270,7 @@ func (b *Bot) deldata(ctx context.Context, r *request) {
 	keyboard := &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
 		{Text: "💣 Yes, delete the data", CallbackData: "dd:yes"}, {Text: "Cancel", CallbackData: "dd:no"},
 	}}}
-	messageID, _ := b.send(ctx, r.chatID, deletionQuestion(torrents, problems), keyboard)
+	messageID, _ := b.send(ctx, r.place(), deletionQuestion(torrents, problems), keyboard)
 	if messageID != 0 {
 		b.rememberScreen(screenKey{r.chatID, messageID}, &screen{command: "deldata", remove: refs})
 	}
@@ -491,7 +491,7 @@ func (b *Bot) move(ctx context.Context, r *request) {
 		return
 	}
 	folder := strings.Join(r.args[ids:], " ")
-	torrents, problems, ok := b.torrentsNamed(ctx, &request{chatID: r.chatID, args: r.args[:ids]}, "move")
+	torrents, problems, ok := b.torrentsNamed(ctx, r.withArgs(r.args[:ids]), "move")
 	if !ok {
 		return
 	}

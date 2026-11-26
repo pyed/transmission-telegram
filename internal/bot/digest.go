@@ -93,22 +93,22 @@ func (b *Bot) digest(ctx context.Context, r *request) {
 	zone := "Times are in the bot's time zone, " + now.Format("MST") + "."
 	var current state.Digest
 	var has bool
-	b.State.Read(func(data *state.Data) { current, has = data.Digest[r.chatID] })
+	b.State.Read(func(data *state.Data) { current, has = data.Digest[r.place()] })
 	word := ""
 	if len(r.args) > 0 {
 		word = strings.ToLower(r.args[0])
 	}
 	switch {
 	case len(r.args) == 0 && !has:
-		b.reply(ctx, r, "This chat gets no digest. Set one with <code>/digest HH:MM [daily|weekly|monthly]</code>, as in <code>/digest 08:00</code>.")
+		b.reply(ctx, r, "This "+placeWord(r.place())+" gets no digest. Set one with <code>/digest HH:MM [daily|weekly|monthly]</code>, as in <code>/digest 08:00</code>.")
 	case len(r.args) == 0:
 		b.reply(ctx, r, fmt.Sprintf("The %s digest comes %s. %s", digestPeriod(current), digestWhen(current), zone))
 	case word == "off" && len(r.args) == 1:
 		if !has {
-			b.reply(ctx, r, "This chat gets no digest.")
+			b.reply(ctx, r, "This "+placeWord(r.place())+" gets no digest.")
 			return
 		}
-		b.saveDigest(r.chatID, nil)
+		b.saveDigest(r.place(), nil)
 		b.reply(ctx, r, "The digest is off.")
 	case word == "now" && len(r.args) == 1:
 		text, _, err := b.buildDigest(ctx, now, current)
@@ -139,23 +139,23 @@ func (b *Bot) digest(ctx context.Context, r *request) {
 		d.Uploaded, d.Downloaded = stats.CumulativeStats.UploadedBytes, stats.CumulativeStats.DownloadedBytes
 		// The first digest comes when it is next due.
 		d.LastDue = lastDue(d, now).Format(time.DateOnly)
-		b.saveDigest(r.chatID, &d)
+		b.saveDigest(r.place(), &d)
 		b.reply(ctx, r, fmt.Sprintf("The %s digest will come %s. %s Send <code>/digest now</code> to see one.",
 			digestPeriod(d), digestWhen(d), zone))
 	}
 }
 
-// saveDigest sets a chat's digest, or removes it when d is nil.
-func (b *Bot) saveDigest(chatID int64, d *state.Digest) {
+// saveDigest sets a chat's or topic's digest, or removes it when d is nil.
+func (b *Bot) saveDigest(place state.Place, d *state.Digest) {
 	err := b.State.Update(func(data *state.Data) {
 		if d == nil {
-			delete(data.Digest, chatID)
+			delete(data.Digest, place)
 			return
 		}
 		if data.Digest == nil {
-			data.Digest = make(map[int64]state.Digest)
+			data.Digest = make(map[state.Place]state.Digest)
 		}
-		data.Digest[chatID] = *d
+		data.Digest[place] = *d
 	})
 	if err != nil {
 		b.Logger.Warn("Could not save the digest; it lasts until the bot stops", "error", err)
@@ -177,15 +177,15 @@ func (b *Bot) watchDigest(ctx context.Context) {
 	}
 }
 
-// checkDigest sends each chat's digest once each time it is due, at its
-// time or after, so that one missed while the bot was down comes as soon as
-// it is back.
+// checkDigest sends each chat's and topic's digest once each time it is
+// due, at its time or after, so that one missed while the bot was down
+// comes as soon as it is back.
 func (b *Bot) checkDigest(ctx context.Context) {
 	now := b.timeNow()
-	var digests map[int64]state.Digest
+	var digests map[state.Place]state.Digest
 	b.State.Read(func(data *state.Data) { digests = maps.Clone(data.Digest) })
-	for _, chatID := range slices.Sorted(maps.Keys(digests)) {
-		was := digests[chatID]
+	for _, place := range slices.SortedFunc(maps.Keys(digests), state.Place.Compare) {
+		was := digests[place]
 		due := lastDue(was, now).Format(time.DateOnly)
 		if was.LastDue >= due {
 			continue
@@ -198,38 +198,39 @@ func (b *Bot) checkDigest(ctx context.Context) {
 		d := was
 		// A group that became a supergroup gets it in its new chat, where
 		// the digest has moved.
-		_, chatID, err := b.sendIn(ctx, chatID, text, nil)
+		_, place, err := b.sendIn(ctx, place, text, nil)
 		switch {
 		case err == nil:
 			d.LastDue, d.Since = due, now.Unix()
 			d.Uploaded, d.Downloaded = stats.CumulativeStats.UploadedBytes, stats.CumulativeStats.DownloadedBytes
 		case chatGone(err):
-			b.Logger.Info("Stopped the digest of a chat the bot can no longer post in", "chat_id", chatID, "error", err)
-			b.replaceDigest(chatID, was, nil)
+			// A topic that is gone was forgotten as the digest was sent.
+			b.Logger.Info("Stopped the digest of a chat the bot can no longer post in", "chat_id", place.Chat, "error", err)
+			b.replaceDigest(place, was, nil)
 			continue
 		case errors.Is(err, tgbot.ErrorBadRequest):
 			// Telegram would refuse it again. The next digest covers this
 			// one's time too.
-			b.Logger.Warn("Telegram refused a digest; it is not sent again", "chat_id", chatID, "error", err)
+			b.Logger.Warn("Telegram refused a digest; it is not sent again", "chat_id", place.Chat, "topic", place.Topic, "error", err)
 			d.LastDue = due
 		default:
 			continue // tried again in a minute
 		}
-		b.replaceDigest(chatID, was, &d)
+		b.replaceDigest(place, was, &d)
 	}
 }
 
-// replaceDigest replaces a chat's digest, was, with d, or removes it when d
-// is nil, unless /digest changed it meanwhile.
-func (b *Bot) replaceDigest(chatID int64, was state.Digest, d *state.Digest) {
+// replaceDigest replaces a chat's or topic's digest, was, with d, or
+// removes it when d is nil, unless /digest changed it meanwhile.
+func (b *Bot) replaceDigest(place state.Place, was state.Digest, d *state.Digest) {
 	err := b.State.Update(func(data *state.Data) {
-		if current, ok := data.Digest[chatID]; !ok || current != was {
+		if current, ok := data.Digest[place]; !ok || current != was {
 			return
 		}
 		if d == nil {
-			delete(data.Digest, chatID)
+			delete(data.Digest, place)
 		} else {
-			data.Digest[chatID] = *d
+			data.Digest[place] = *d
 		}
 	})
 	if err != nil {

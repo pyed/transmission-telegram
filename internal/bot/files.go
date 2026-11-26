@@ -59,7 +59,7 @@ func (b *Bot) files(ctx context.Context, r *request) {
 		return
 	}
 	text, keyboard := filesPage(t, 0)
-	b.send(ctx, r.chatID, text, keyboard)
+	b.send(ctx, r.place(), text, keyboard)
 }
 
 func (b *Bot) filesTorrent(ctx context.Context, id int) (*transmission.Torrent, error) {

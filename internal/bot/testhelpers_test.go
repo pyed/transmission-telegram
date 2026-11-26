@@ -30,8 +30,11 @@ type fakeTelegram struct {
 	mu            sync.Mutex
 	texts         []string
 	chats         []string
+	topics        []string // message_thread_id of each message sent
 	parseModes    []string
 	documents     []string
+	docTopics     []string // message_thread_id of each file sent
+	actionTopics  []string // message_thread_id of each chat action
 	callbackTexts []string
 	textEditCalls int
 	edits         [][2]string // message ID and text of each text edit
@@ -89,6 +92,7 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 			f.mu.Lock()
 			f.texts = append(f.texts, r.FormValue("text"))
 			f.chats = append(f.chats, r.FormValue("chat_id"))
+			f.topics = append(f.topics, r.FormValue("message_thread_id"))
 			f.parseModes = append(f.parseModes, r.FormValue("parse_mode"))
 			f.lastMessageID++
 			id := f.lastMessageID
@@ -103,6 +107,7 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 			content, _ := io.ReadAll(file)
 			f.mu.Lock()
 			f.documents = append(f.documents, string(content))
+			f.docTopics = append(f.docTopics, r.FormValue("message_thread_id"))
 			f.mu.Unlock()
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":99,"date":1,"chat":{"id":42,"type":"private"}}}`))
 		case "answerCallbackQuery":
@@ -127,6 +132,11 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 			f.pins = append(f.pins, r.FormValue("message_id")+" "+r.FormValue("disable_notification"))
 			f.mu.Unlock()
 			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+		case "sendChatAction":
+			f.mu.Lock()
+			f.actionTopics = append(f.actionTopics, r.FormValue("message_thread_id"))
+			f.mu.Unlock()
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
 		case "getMyCommands":
 			_, _ = w.Write([]byte(`{"ok":true,"result":[]}`))
 		case "getUpdates":
@@ -136,7 +146,7 @@ func newFakeTelegram(t *testing.T) *fakeTelegram {
 		case "getWebhookInfo":
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"url":"","has_custom_certificate":false,"pending_update_count":0}}`))
 		default:
-			// sendChatAction, editMessageText, deleteWebhook, etc.
+			// deleteWebhook, unpinChatMessage, etc.
 			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
 		}
 	}))
@@ -172,6 +182,28 @@ func (f *fakeTelegram) sentChats() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.chats...)
+}
+
+// sentTopics returns the topic each message was sent to, in order: empty
+// for none.
+func (f *fakeTelegram) sentTopics() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.topics...)
+}
+
+// sentDocumentTopics returns the topic each file was sent to, in order.
+func (f *fakeTelegram) sentDocumentTopics() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.docTopics...)
+}
+
+// sentActionTopics returns the topic each chat action was shown in.
+func (f *fakeTelegram) sentActionTopics() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.actionTopics...)
 }
 
 // waitForSent waits until n messages have been sent.
@@ -251,6 +283,20 @@ func memoryState(t *testing.T) *state.Store {
 		t.Fatal(err)
 	}
 	return store
+}
+
+// at is a chat, without a topic.
+func at(chatID int64) state.Place {
+	return state.Place{Chat: chatID}
+}
+
+// messageInTopic is a text message from user 12345 in a topic of the forum
+// chatID.
+func messageInTopic(chatID int64, topic int, text string) *models.Update {
+	update := messageIn(chatID, text)
+	update.Message.Chat.IsForum = true
+	update.Message.IsTopicMessage, update.Message.MessageThreadID = true, topic
+	return update
 }
 
 // message is a text message from user 12345 in chat 42.
